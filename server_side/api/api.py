@@ -1,6 +1,5 @@
 import socket
 from server_side.util.constants import CONTROLLER_PORT
-from server_side.util.http_parser import HTTPParser
 import json
 
 
@@ -8,7 +7,6 @@ class API:
     def __init__(self):
         self.port = CONTROLLER_PORT
         self.host = ""
-        self.parser = HTTPParser()
 
     def run(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -33,7 +31,25 @@ class API:
                         i += 1
 
     def endpoints(self, request: dict) -> dict:
-        return {"TODO": True}
+        _type = request["request"]
+        if _type == "GET_USER_INFORMATION":
+            return self._get_user_information(request)
+        elif _type == "ENTRAR_NA_APP":
+            return self._login_or_create_user(request)
+        elif _type == "SAIR_DA_APP_":
+            return self._logout_or_remove(request)
+
+    def _get_user_information(self, request: dict) -> dict:
+        _type = "USER_INFORMATION"
+        return {"answer": _type}
+
+    def _login_or_create_user(self, request: dict) -> dict:
+        _type = ["ENTRAR_NA_APP_ACK", "STATUS_DO_USUARIO"]
+        return {"answer": _type}
+
+    def _logout_or_remove(self, request: dict) -> dict:
+        _type = "SAIR_DA_APP_ACK"
+        return {"answer": _type}
 
 
 if __name__ == "__main__":
