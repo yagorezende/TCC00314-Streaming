@@ -6,7 +6,7 @@ class Main:
         return self
 
     def run(self):
-        pass
+        print("running")
 
 
 if __name__ == "__main__":
