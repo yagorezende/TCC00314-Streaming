@@ -1,6 +1,6 @@
-from server_side.api.api import API
-from server_side.model.node import Node
-from server_side.util.constants import CONTROLLER_PORT_CLIENT, CONTROLLER_PORT_STREAMING
+from api.api import API
+from model.node import Node
+from util.constants import CONTROLLER_PORT_CLIENT, CONTROLLER_PORT_STREAMING
 
 
 class Main(Node):

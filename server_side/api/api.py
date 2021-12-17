@@ -2,7 +2,7 @@ import socket
 import json
 import threading
 
-from server_side.model.node import Node
+from model.node import Node
 
 
 class API(Node):
@@ -22,24 +22,13 @@ class API(Node):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             s.bind((self.host, self.port))
-            s.listen(1)
+            s.listen(10)
             self.server = s
             self.request = "running"
             while self.request != b'kill':
                 conn, addr = s.accept()
-                with conn:
-                    print('Connected by', addr)
-                    i = 1
-                    while True:
-                        self.request = conn.recv(1024)
-                        print("request", i, ": ", self.request)
-                        if not self.request or self.request == b'kill':
-                            break
-                        data = json.loads(self.request)
-                        print("data: ", data)
-                        response = self.endpoints(data)
-                        conn.sendall(json.dumps(response).encode())
-                        i += 1
+                threading.Thread(target=self._process_connection, args=(conn, addr)).start()
+
 
     def endpoints(self, request: dict) -> dict:
         try:
@@ -73,6 +62,22 @@ class API(Node):
             self._server_thread.join()
         print("Server closed")
 
+    def _process_connection(self, conn, addr):
+        with conn:
+            print('Connected by', addr)
+            i = 1
+            while True:
+                self.request = conn.recv(1024)
+                print("request", i, ": ", self.request)
+                if not self.request or self.request == b'kill':
+                    break
+                data = json.loads(self.request)
+                print("data: ", data)
+                response = self.endpoints(data)
+                conn.sendall(json.dumps(response).encode())
+                i += 1
+
 
 if __name__ == "__main__":
+
     API(5000).run()

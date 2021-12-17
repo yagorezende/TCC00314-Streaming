@@ -1,7 +1,7 @@
 import random
 from typing import List
 
-from server_side.util.constants import Service
+from util.constants import Service
 
 
 class User:
