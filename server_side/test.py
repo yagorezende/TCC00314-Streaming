@@ -3,11 +3,11 @@ import socket, json
 
 HOST = 'localhost'
 PORT = 5000
-
+LOGIN_DATA = {"request": "GET_USER_INFORMATION", "id": 1}
 
 def tester():
     run = True
-    data = {"teste": 1}
+    data = LOGIN_DATA
     while run:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((HOST, PORT))
