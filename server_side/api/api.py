@@ -29,7 +29,6 @@ class API(Node):
                 conn, addr = s.accept()
                 threading.Thread(target=self._process_connection, args=(conn, addr)).start()
 
-
     def endpoints(self, request: dict) -> dict:
         try:
             _type = request["request"]
@@ -79,5 +78,4 @@ class API(Node):
 
 
 if __name__ == "__main__":
-
     API(5000).run()

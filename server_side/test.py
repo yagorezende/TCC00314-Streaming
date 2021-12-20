@@ -14,7 +14,7 @@ def tester(port):
     while run:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((HOST, port))
-            s.send(json.dumps(data).encode())
+            s.sendall(json.dumps(data).encode())
             response = s.recv(1024)
             if response:
                 print('Received', repr(response))
