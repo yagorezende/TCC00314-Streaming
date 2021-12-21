@@ -7,12 +7,13 @@ HOST = '127.0.0.1'
 PORT= 5050
 udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 dest = (HOST, PORT)
+udp.connect(dest)
 class InitialFrame(Frame):
-    def __init__(self, link, navigator):
+    def __init__(self, link, navigator, quit_app):
         super().__init__(link)
         self.main_label = Label(self, text="UFFlix", font=("Arial", 25))
         self.login_btn = Button(self, text="Entrar na app!", command=navigator, width=20)
-        self.quit_button = Button(self, text="Sair!", command=link.quit, width=20)
+        self.quit_button = Button(self, text="Sair!", command=lambda: quit_app(), width=20)
         self.username_label = Label(self, text="username", pady=10, padx=10).grid(row=1, column=0)
         self.username_entry = Entry(self, width=20)
         self.password_label = Label(self, text="password", pady=10, padx=10).grid(row=2, column=0)
@@ -28,7 +29,6 @@ class ListVideosFrame(Frame):
         super().__init__(link)
         
         # start socket comm
-        udp.connect(dest)
         req = {"request": "LISTAR_VIDEOS"}
         bytesToSend = json.dumps(req).encode()
         udp.sendall(bytesToSend)
@@ -58,7 +58,6 @@ class VideoFrame(Frame):
         super().__init__(link)
         
         # start socket comm
-        udp.connect(dest)
         # req = {"request": "REPRODUZIR_VIDEO", "video": videoname, "quality": quality}
         # bytesToSend = json.dumps(req).encode()
         # udp.sendall(bytesToSend)
@@ -74,7 +73,7 @@ class App(Tk):
         super().__init__()
         self.title("Trabalho streaming de video")
         self.geometry("1280x1024")
-        self.curr_frame = InitialFrame(self, self.navigate_to_main)
+        self.curr_frame = InitialFrame(self, self.navigate_to_main, self.sair_da_app)
         self.curr_frame.place(in_=self, anchor="c", relx=.5, rely=.5)
 
 
@@ -91,13 +90,13 @@ class App(Tk):
         return
 
     def sair_da_app(self):
-        req = {"request": "SAIR_DA_APP"}
-        bytesToSend = json.dumps(req).encode()
-        udp.sendall(bytesToSend)
-        res = udp.recv(BUFF_SIZE)
-        resAsJson = json.loads(res)
-        if(resAsJson["request"] == "SAIR_DA_APP_ACK"):
-            udp.close()
+        # req = {"request": "SAIR_DA_APP"}
+        # bytesToSend = json.dumps(req).encode()
+        # udp.sendall(bytesToSend)
+        # res = udp.recv(BUFF_SIZE)
+        # resAsJson = json.loads(res)
+        # if(resAsJson["request"] == "SAIR_DA_APP_ACK"):
+        udp.close()
         quit()
 
     
