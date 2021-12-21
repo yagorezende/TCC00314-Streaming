@@ -24,7 +24,10 @@ def open_server():
         if request.get("request") == "LISTAR_VIDEOS":
             list_videos(server_socket, client_addr)
         elif request["request"] == "REPRODUZIR_VIDEO":
-            start_stream(server_socket, client_addr, width=WIDTH)
+            start_stream(server_socket, client_addr,filename="videos/"+request["video"], width=request["quality"])
+        elif request["request"] == "SAIR_DA_APP":
+            msg = {"request": "SAIR_DA_APP_ACK"}
+            server_socket.sendto(json.dumps(msg).encode(), client_addr)
         else:
             break
 
@@ -35,13 +38,13 @@ def list_videos(server_socket, client_addr):
     server_socket.sendto(json.dumps(msg).encode(), client_addr)
 
 
-def start_stream(server_socket, client_addr, filename="videos/video1.mp4", width=400):
+def start_stream(server_socket, client_addr, filename="videos/video1.mp4", quality="720p"):
     vid = cv2.VideoCapture(filename)  # vem do client qual video reproduzir
     fps, st, frames_to_count, cnt = (0, 0, 20, 0)
 
     while vid.isOpened():
         _, frame = vid.read()
-        frame = imutils.resize(frame, width=width)
+        frame = imutils.resize(frame, width=get_width(quality))
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         message = base64.b64encode(buffer)
         server_socket.sendto(message, client_addr)
@@ -60,6 +63,16 @@ def start_stream(server_socket, client_addr, filename="videos/video1.mp4", width
                 pass
         cnt += 1
 
+
+def get_width(quality):
+	if(quality == "720p"):
+		return 1280
+	elif(quality == "480p"):
+		return 854
+	elif(quality == "240p"):
+		return 426
+	else:
+		raise "quality not"
 
 if __name__ == "__main__":
     open_server()
