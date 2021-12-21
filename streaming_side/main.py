@@ -42,7 +42,7 @@ def list_videos(server_socket, client_addr):
 
 def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
     vid = cv2.VideoCapture("videos/" + filename)  # vem do client qual video reproduzir
-    fps, st, frames_to_count, cnt = (0, 0, 300, 0)
+    fps, st, frames_to_count, cnt = (0, 0, int(vid.get(cv2.CAP_PROP_FRAME_COUNT)), 0)
 
     while vid.isOpened():
         ret, frame = vid.read()
