@@ -7,6 +7,7 @@ BUFF_SIZE = 65536
 host_ip = 'localhost'
 port = 5050
 WIDTH = 400
+QUALITY = {"720p": 1280, "480p": 854, "240p": 426}
 
 
 def open_server():
@@ -23,8 +24,10 @@ def open_server():
         request = json.loads(msg)
         if request.get("request") == "LISTAR_VIDEOS":
             list_videos(server_socket, client_addr)
-        elif request["request"] == "REPRODUZIR_VIDEO":
-            start_stream(server_socket, client_addr, width=WIDTH)
+        elif request.get("request") == "REPRODUZIR_VIDEO":
+            video_name = request.get("video")
+            quality = QUALITY[request.get("quality")]
+            start_stream(server_socket, client_addr, width=quality, filename=video_name)
         else:
             break
 
@@ -35,8 +38,8 @@ def list_videos(server_socket, client_addr):
     server_socket.sendto(json.dumps(msg).encode(), client_addr)
 
 
-def start_stream(server_socket, client_addr, filename="videos/video1.mp4", width=400):
-    vid = cv2.VideoCapture(filename)  # vem do client qual video reproduzir
+def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
+    vid = cv2.VideoCapture("videos/" + filename)  # vem do client qual video reproduzir
     fps, st, frames_to_count, cnt = (0, 0, 20, 0)
 
     while vid.isOpened():
