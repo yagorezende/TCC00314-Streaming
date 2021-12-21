@@ -43,7 +43,11 @@ def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
     fps, st, frames_to_count, cnt = (0, 0, 20, 0)
 
     while vid.isOpened():
-        _, frame = vid.read()
+        ret, frame = vid.read()
+        if not ret:
+            message = b'FIM'
+            server_socket.sendto(message, client_addr)
+            break
         frame = imutils.resize(frame, width=width)
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         message = base64.b64encode(buffer)
