@@ -16,11 +16,8 @@ class InitialFrame(Frame):
         self.quit_button = Button(self, text="Sair!", command=lambda: quit_app(), width=20)
         self.username_label = Label(self, text="username", pady=10, padx=10).grid(row=1, column=0)
         self.username_entry = Entry(self, width=20)
-        self.password_label = Label(self, text="password", pady=10, padx=10).grid(row=2, column=0)
-        self.password_entry = Entry(self, width=20)
         self.main_label.grid(column=0, row=0, columnspan=2)
         self.username_entry.grid(column=1, row=1)
-        self.password_entry.grid(column=1, row=2)
         self.login_btn.grid(column=0, row=3, columnspan=2, pady=10)
         self.quit_button.grid(column=0, row=4, columnspan=2)
 
