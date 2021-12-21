@@ -1,4 +1,5 @@
 import json
+import threading
 from os import listdir
 from os.path import isfile, join
 import cv2, imutils, socket, time, base64
@@ -27,7 +28,8 @@ def open_server():
         elif request.get("request") == "REPRODUZIR_VIDEO":
             video_name = request.get("video")
             quality = QUALITY[request.get("quality")]
-            start_stream(server_socket, client_addr, width=quality, filename=video_name)
+            threading.Thread(target=start_stream, args=(server_socket, client_addr),
+                             kwargs=dict(width=quality, filename=video_name)).start()
         else:
             break
 
@@ -40,7 +42,7 @@ def list_videos(server_socket, client_addr):
 
 def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
     vid = cv2.VideoCapture("videos/" + filename)  # vem do client qual video reproduzir
-    fps, st, frames_to_count, cnt = (0, 0, 20, 0)
+    fps, st, frames_to_count, cnt = (0, 0, 300, 0)
 
     while vid.isOpened():
         ret, frame = vid.read()
@@ -65,6 +67,7 @@ def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
             except:
                 pass
         cnt += 1
+    print("thread finalizada")
 
 
 if __name__ == "__main__":
