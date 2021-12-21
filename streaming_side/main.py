@@ -2,7 +2,7 @@ import json
 from os import listdir
 from os.path import isfile, join
 import cv2, imutils, socket, time, base64
-
+import zlib
 BUFF_SIZE = 65536
 host_ip = 'localhost'
 port = 5050
@@ -49,14 +49,13 @@ def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
             server_socket.sendto(message, client_addr)
             break
         frame = imutils.resize(frame, width=width)
-        encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
         message = base64.b64encode(buffer)
-        server_socket.sendto(message, client_addr)
-        frame = cv2.putText(frame, 'FPS: ' + str(fps), (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        cv2.imshow('Transmitindo vídeo', frame)
+        compressed = zlib.compress(message, 9)
+        server_socket.sendto(compressed, client_addr)
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
-            server_socket.close()
+            # server_socket.close()
             break
         if cnt == frames_to_count:
             try:

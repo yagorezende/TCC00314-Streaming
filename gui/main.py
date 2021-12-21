@@ -1,6 +1,11 @@
 from tkinter import *
 import socket
 import json
+import cv2
+import base64
+import numpy as np
+import time
+import zlib 
 
 BUFF_SIZE = 65536
 HOST = '127.0.0.1'
@@ -55,14 +60,37 @@ class VideoFrame(Frame):
         super().__init__(link)
         
         # start socket comm
-        # req = {"request": "REPRODUZIR_VIDEO", "video": videoname, "quality": quality}
-        # bytesToSend = json.dumps(req).encode()
-        # udp.sendall(bytesToSend)
-        # res = udp.recv(BUFF_SIZE)
-        # resAsJson = json.loads(res)
-        # end socket comm
+        req = {"request": "REPRODUZIR_VIDEO", "video": videoname, "quality": quality}
+        bytesToSend = json.dumps(req).encode()
+        udp.sendall(bytesToSend)
+        fps,st,frames_to_count,cnt = (0,0,20,0)
 
-        Label(self, text="Voce esta assistindo a: " + videoname + " em " + quality).pack()
+        while True:
+            try:
+                packet,_ = udp.recvfrom(BUFF_SIZE)
+                uncompressed = zlib.decompress(packet)
+                data = base64.b64decode(uncompressed,' /')
+                npdata = np.fromstring(data,dtype=np.uint8)
+                frame = cv2.imdecode(npdata,1)
+                cv2.imshow("RECEIVING VIDEO",frame)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    # udp.close()
+                    cv2.destroyAllWindows()
+                    break
+                if cnt == frames_to_count:
+                    try:
+                        fps = round(frames_to_count/(time.time()-st))
+                        st=time.time()
+                        cnt=0
+                    except:
+                        pass
+                cnt+=1
+            except:
+                cv2.destroyAllWindows()
+                break
+
+        Label(self, text="Fim da exibição de: " + videoname + " em " + quality).pack()
         Button(self, text="Voltar", command=navigator).pack(pady=20)
 
 class App(Tk):
@@ -100,8 +128,10 @@ class App(Tk):
 
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
-
+    try:
+        app = App()
+        app.mainloop()
+    except:
+        app.quit
 
 
