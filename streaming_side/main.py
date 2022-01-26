@@ -8,10 +8,12 @@ from os.path import isfile, join
 import cv2, imutils, socket, time, base64
 import zlib
 import queue as pyqueue
+import tqdm
 
 import pyaudio
 
 BUFF_SIZE = 65536
+SEND_VIDEO_BUFFER_SIZE = 4096
 FRAME_SIZE = BUFF_SIZE - 2 ** 10
 host_ip = 'localhost'
 port = 5050
@@ -41,13 +43,14 @@ def open_server():
         print('Conexão de: ', client_addr)
         request = json.loads(msg)
         print(request)
-        if request.get("request") == "LISTAR_VIDEOS":
+        request_type  = request.get("request")
+        if request_type == "LISTAR_VIDEOS":
             list_videos(server_socket, client_addr)
-        elif request.get("request") == "STREAMAR_MEMBRO_GRUPO":
+        elif request_type == "STREAMAR_MEMBRO_GRUPO":
             # TODO: checar com o servidor de controle se o usuário está no grupo
             grupo_id = request.get("video")
             grupos[grupo_id].append(client_addr)
-        elif request.get("request") == "REPRODUZIR_VIDEO":
+        elif request_type == "REPRODUZIR_VIDEO":
             try:
 
                 # TODO: mudar para grupos
@@ -57,6 +60,30 @@ def open_server():
                                 kwargs=dict(width=quality, filename=video_name)).start()
             except:
                 print("error ocurred")
+        elif request_type == "ADICIONAR_VIDEO":
+            try:
+                filename = request.get("filename")
+                filesize = request.get("filesize")
+                # start receiving the file from the socket
+                # and writing to the file stream
+                progress = tqdm.tqdm(range(filesize), f"Receiving {filename}", unit="B", unit_scale=True, unit_divisor=1024)
+                with open(filename, "wb") as f:
+                    while True:
+                        # read 1024 bytes from the socket (receive)
+                        bytes_read = server_socket.recv(SEND_VIDEO_BUFFER_SIZE)
+                        if not bytes_read:    
+                            # nothing is received
+                            # file transmitting is done
+                            break
+                        # write to the file the bytes we just received
+                        f.write(bytes_read)
+                        # update the progress bar
+                        progress.update(len(bytes_read))
+
+                
+                
+            except:
+                print("error adding video")
         else:
             break
     audio_server.close()
