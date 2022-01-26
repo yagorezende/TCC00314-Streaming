@@ -81,7 +81,8 @@ class VideoFrame(Frame):
         udp.sendall(bytesToSend)
         audio_thread = threading.Thread(target=self.audio_stream, args=(videoname,))
         audio_thread.start()
-
+        global close_stream
+        close_stream = False
         fps, st, frames_to_count, cnt = (0, 0, 20, 0)
 
         while True:
@@ -106,9 +107,13 @@ class VideoFrame(Frame):
                 npdata = np.fromstring(data, dtype=np.uint8)
                 frame = cv2.imdecode(npdata, 1)
                 cv2.imshow("RECEIVING VIDEO", frame)
+
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
+                
+                if key == ord('q') or cv2.getWindowProperty('RECEIVING VIDEO',cv2.WND_PROP_VISIBLE) < 1:
                     # udp.close()
+                    close_stream = True
+
                     cv2.destroyAllWindows()
                     break
                 if cnt == frames_to_count:
@@ -151,6 +156,9 @@ class VideoFrame(Frame):
         payload_size = struct.calcsize("Q")
         while True:
             try:
+                if close_stream == True:
+                    stream.close()
+                    break
                 while len(data) < payload_size:
                     packet = client_socket.recv(4 * 1024)  # 4K
                     if not packet: break
@@ -165,6 +173,7 @@ class VideoFrame(Frame):
                 frame = pickle.loads(frame_data)
                 stream.write(frame)
             except:
+                stream.close()
                 break
         client_socket.close()
         os._exit(1)

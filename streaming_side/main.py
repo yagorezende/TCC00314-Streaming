@@ -48,11 +48,15 @@ def open_server():
             grupo_id = request.get("video")
             grupos[grupo_id].append(client_addr)
         elif request.get("request") == "REPRODUZIR_VIDEO":
-            # TODO: mudar para grupos
-            video_name = request.get("video") + "_" + request.get("quality") + ".mp4"
-            quality = QUALITY[request.get("quality")]
-            threading.Thread(target=start_stream, args=(server_socket, client_addr),
-                             kwargs=dict(width=quality, filename=video_name)).start()
+            try:
+
+                # TODO: mudar para grupos
+                video_name = request.get("video") + "_" + request.get("quality") + ".mp4"
+                quality = QUALITY[request.get("quality")]
+                threading.Thread(target=start_stream, args=(server_socket, client_addr),
+                                kwargs=dict(width=quality, filename=video_name)).start()
+            except:
+                print("error ocurred")
         else:
             break
     audio_server.close()
@@ -82,13 +86,17 @@ def video_stream_gen(queue, vid):
 
 def audio_stream(server_socket: socket.socket):
     while server_socket.fileno() > 0:
-        client_socket, addr = server_socket.accept()
-        msg = client_socket.recv(4 * 1024)
-        request = json.loads(msg)
-        if request.get("request") == "GET_AUDIO":
-            video_name = request.get("video")
-            t = threading.Thread(target=audio_stream_sender, args=(client_socket, video_name))
-            t.start()
+        try:
+            client_socket, addr = server_socket.accept()
+            msg = client_socket.recv(4 * 1024)
+            request = json.loads(msg)
+            if request.get("request") == "GET_AUDIO":                    
+                video_name = request.get("video")
+                t = threading.Thread(target=audio_stream_sender, args=(client_socket, video_name))
+                t.start()
+        except:
+            print("error_audio_sending")
+            break
 
 
 def audio_stream_sender(client_socket, audio_name):
@@ -98,10 +106,14 @@ def audio_stream_sender(client_socket, audio_name):
     while True:
         if client_socket:
             while True:
-                data = wf.readframes(CHUNK)
-                a = pickle.dumps(data)
-                message = struct.pack("Q", len(a)) + a
-                client_socket.sendall(message)
+                try:
+                    data = wf.readframes(CHUNK)
+                    a = pickle.dumps(data)
+                    message = struct.pack("Q", len(a)) + a
+                    client_socket.sendall(message)
+                except:
+                    raise
+                    
 
 
 def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
@@ -115,46 +127,51 @@ def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
     queue_thread.start()
 
     while True:
-        frame = queue.get()
+        try:
+            frame = queue.get()
 
-        # frame = imutils.resize(frame, width=width)
-        encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        # message = base64.b64encode(buffer)
-        message = pickle.dumps(buffer)
-        compressed = zlib.compress(message, 9)
-        # print("Message Size:", len(compressed))
-        data = {"frame": cnt, "len": len(compressed)}
-        server_socket.sendto(json.dumps(data).encode(), client_addr)
-        starting_point = 0
-        file_size = 0
-        while starting_point < len(compressed):
-            # splitting the data
-            data = compressed[starting_point: int(starting_point + FRAME_SIZE)]
-            file_size += len(data)
-            # print("Sending Message:", len(data), "sent ->", file_size)
-            server_socket.sendto(data, client_addr)
-            starting_point += FRAME_SIZE
+            # frame = imutils.resize(frame, width=width)
+            encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            # message = base64.b64encode(buffer)
+            message = pickle.dumps(buffer)
+            compressed = zlib.compress(message, 9)
+            # print("Message Size:", len(compressed))
+            data = {"frame": cnt, "len": len(compressed)}
+            server_socket.sendto(json.dumps(data).encode(), client_addr)
+            starting_point = 0
+            file_size = 0
+            while starting_point < len(compressed):
+                # splitting the data
+                data = compressed[starting_point: int(starting_point + FRAME_SIZE)]
+                file_size += len(data)
+                # print("Sending Message:", len(data), "sent ->", file_size)
+                server_socket.sendto(data, client_addr)
+                starting_point += FRAME_SIZE
 
-        if cnt == frames_to_count:
-            try:
-                fps = (frames_to_count / (time.time() - st))
-                st = time.time()  # guardando referencia para fazer o delta time
-                cnt = 0
-                # Pulo do gato, controle do frame rate
-                if fps > FPS:
-                    TS += 0.001  # acrescentando um delay de 1 millisec
-                elif fps < FPS:
-                    TS -= 0.001  # reduzindo o delay em 1 millisec
-                else:
+            if cnt == frames_to_count:
+                try:
+                    fps = (frames_to_count / (time.time() - st))
+                    st = time.time()  # guardando referencia para fazer o delta time
+                    cnt = 0
+                    # Pulo do gato, controle do frame rate
+                    if fps > FPS:
+                        TS += 0.001  # acrescentando um delay de 1 millisec
+                    elif fps < FPS:
+                        TS -= 0.001  # reduzindo o delay em 1 millisec
+                    else:
+                        pass
+                except:
                     pass
-            except:
-                pass
-        cnt += 1
-        time.sleep(TS)
-        key = cv2.waitKey(int(TS * 1000)) & 0xFF
-        if key == ord("q"):
-            TS = False
-            os._exit(1)
+            cnt += 1
+            time.sleep(TS)
+            key = cv2.waitKey(int(TS * 1000)) & 0xFF
+            if key == ord("q"):
+                TS = False
+                os._exit(1)
+                break
+        except:
+
+            print('error')
             break
 
     print("thread finalizada")
