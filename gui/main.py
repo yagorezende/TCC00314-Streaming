@@ -1,3 +1,7 @@
+import os
+import pickle
+import struct
+import threading
 from tkinter import *
 import socket
 import json
@@ -5,14 +9,21 @@ import cv2
 import base64
 import numpy as np
 import time
-import zlib 
+import zlib
+
+import pyaudio
 
 BUFF_SIZE = 65536
+FRAME_SIZE = BUFF_SIZE - 2**10
 HOST = '127.0.0.1'
-PORT= 5050
+PORT = 5050
 udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+audio_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 dest = (HOST, PORT)
 udp.connect(dest)
+audio_udp.connect((HOST, PORT-1))
+
+
 class InitialFrame(Frame):
     def __init__(self, link, navigator, quit_app):
         super().__init__(link)
@@ -26,10 +37,11 @@ class InitialFrame(Frame):
         self.login_btn.grid(column=0, row=3, columnspan=2, pady=10)
         self.quit_button.grid(column=0, row=4, columnspan=2)
 
+
 class ListVideosFrame(Frame):
     def __init__(self, link, navigator, quit_app):
         super().__init__(link)
-        
+
         # start socket comm
         req = {"request": "LISTAR_VIDEOS"}
         bytesToSend = json.dumps(req).encode()
@@ -44,35 +56,56 @@ class ListVideosFrame(Frame):
         title = Label(self, text="Lista de vídeos disponiveis", pady=10, font=("Arial", 25))
         title.pack()
         for video in self.videos:
-            curr_frame = Frame(self, pady=20,highlightbackground="#ffffff", highlightthickness=1, bd= 0, relief=SUNKEN)
+            curr_frame = Frame(self, pady=20, highlightbackground="#ffffff", highlightthickness=1, bd=0, relief=SUNKEN)
             Label(curr_frame, text=video, width=30).grid(column=0, row=0, pady=5, padx=5)
-            Button(curr_frame, text="720p (1280x720 pixels)", command=lambda video=video: navigator(video, "720p")).grid(column=1, row=0, pady=5, padx=5)
-            Button(curr_frame, text="480p (854x480 pixels)", command=lambda video=video: navigator(video, "480p")).grid(column=2, row=0, pady=5, padx=5)
-            Button(curr_frame, text="240p (426x240 pixels)", command=lambda video=video: navigator(video, "240p")).grid(column=3, row=0, pady=5, padx=5)
+            Button(curr_frame, text="720p (1280x720 pixels)",
+                   command=lambda video=video: navigator(video, "720p")).grid(column=1, row=0, pady=5, padx=5)
+            Button(curr_frame, text="480p (854x480 pixels)", command=lambda video=video: navigator(video, "480p")).grid(
+                column=2, row=0, pady=5, padx=5)
+            Button(curr_frame, text="240p (426x240 pixels)", command=lambda video=video: navigator(video, "240p")).grid(
+                column=3, row=0, pady=5, padx=5)
 
             curr_frame.pack(fill=BOTH, expand='yes')
             cur_row += 1
-        
+
         Button(self, text="sair", command=lambda: quit_app(), padx=50).pack(pady=20)
+
 
 class VideoFrame(Frame):
     def __init__(self, link, videoname, quality, navigator):
         super().__init__(link)
-        
+
         # start socket comm
         req = {"request": "REPRODUZIR_VIDEO", "video": videoname, "quality": quality}
         bytesToSend = json.dumps(req).encode()
         udp.sendall(bytesToSend)
-        fps,st,frames_to_count,cnt = (0,0,20,0)
+        audio_thread = threading.Thread(target=self.audio_stream, args=(videoname,))
+        audio_thread.start()
+
+        fps, st, frames_to_count, cnt = (0, 0, 20, 0)
 
         while True:
             try:
-                packet,_ = udp.recvfrom(BUFF_SIZE)
-                uncompressed = zlib.decompress(packet)
-                data = base64.b64decode(uncompressed,' /')
-                npdata = np.fromstring(data,dtype=np.uint8)
-                frame = cv2.imdecode(npdata,1)
-                cv2.imshow("RECEIVING VIDEO",frame)
+                try:
+                    packet, _ = udp.recvfrom(BUFF_SIZE)
+                    info = json.loads(packet.decode("utf8"))
+                    # print(info)
+                    content = bytes()
+                    while len(content) < info.get("len"):
+                        packet, _ = udp.recvfrom(BUFF_SIZE)
+                        content += packet
+                        # print(len(content))
+
+                    # print("Content size:", len(content))
+                except Exception as e:
+                    print("jumping due:", e)
+                    continue
+
+                uncompressed = zlib.decompress(content)
+                data = pickle.loads(uncompressed)  # base64.b64decode(uncompressed,' /')
+                npdata = np.fromstring(data, dtype=np.uint8)
+                frame = cv2.imdecode(npdata, 1)
+                cv2.imshow("RECEIVING VIDEO", frame)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     # udp.close()
@@ -80,18 +113,62 @@ class VideoFrame(Frame):
                     break
                 if cnt == frames_to_count:
                     try:
-                        fps = round(frames_to_count/(time.time()-st))
-                        st=time.time()
-                        cnt=0
+                        fps = round(frames_to_count / (time.time() - st))
+                        st = time.time()
+                        cnt = 0
                     except:
                         pass
-                cnt+=1
-            except:
-                cv2.destroyAllWindows()
-                break
+                cnt += 1
+            except Exception as e:
+                print(e)
+                # cv2.destroyAllWindows()
+                #break
 
         Label(self, text="Fim da exibição de: " + videoname + " em " + quality).pack()
         Button(self, text="Voltar", command=navigator).pack(pady=20)
+
+    def audio_stream(self, videoname):
+        audio_req = {"request": "GET_AUDIO", "video": videoname}
+        bytesToSend = json.dumps(audio_req).encode()
+
+
+        p = pyaudio.PyAudio()
+        CHUNK = 1024
+        stream = p.open(format=p.get_format_from_width(2),
+                        channels=2,
+                        rate=44100,
+                        output=True,
+                        frames_per_buffer=CHUNK)
+        # create socket
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        socket_address = (HOST, PORT - 1)
+        print('server listening at', socket_address)
+        client_socket.connect(socket_address)
+        print("CLIENT CONNECTED TO", socket_address)
+        client_socket.sendall(bytesToSend)
+
+        data = b""
+        payload_size = struct.calcsize("Q")
+        while True:
+            try:
+                while len(data) < payload_size:
+                    packet = client_socket.recv(4 * 1024)  # 4K
+                    if not packet: break
+                    data += packet
+                packet_msg_size = data[:payload_size]
+                data = data[payload_size:]
+                msg_size = struct.unpack("Q", packet_msg_size)[0]
+                while len(data) < msg_size:
+                    data += client_socket.recv(4 * 1024)
+                frame_data = data[:msg_size]
+                data = data[msg_size:]
+                frame = pickle.loads(frame_data)
+                stream.write(frame)
+            except:
+                break
+        client_socket.close()
+        os._exit(1)
+
 
 class App(Tk):
     def __init__(self):
@@ -100,7 +177,6 @@ class App(Tk):
         self.geometry("1280x1024")
         self.curr_frame = InitialFrame(self, self.navigate_to_main, self.sair_da_app)
         self.curr_frame.place(in_=self, anchor="c", relx=.5, rely=.5)
-
 
     def navigate_to_main(self):
         self.curr_frame.place_forget()
@@ -124,8 +200,6 @@ class App(Tk):
         udp.close()
         quit()
 
-    
-
 
 if __name__ == "__main__":
     try:
@@ -133,5 +207,3 @@ if __name__ == "__main__":
         app.mainloop()
     except:
         app.quit
-
-
