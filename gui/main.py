@@ -17,8 +17,10 @@ BUFF_SIZE = 65536
 FRAME_SIZE = BUFF_SIZE - 2**10
 HOST = '127.0.0.1'
 PORT = 5050
+TCP_PORT = 6060
 udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 audio_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 dest = (HOST, PORT)
 udp.connect(dest)
 audio_udp.connect((HOST, PORT-1))

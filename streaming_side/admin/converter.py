@@ -1,9 +1,10 @@
 import os
 import moviepy.editor as mpe
 import moviepy.video.fx.resize as mpfr
-from server_side.util.constants import QUALITY
 import json
 
+
+QUALITY = {"720p": 1280, "480p": 854, "240p": 426}
 
 class Converter:
     def __init__(self, clip_path: str):
@@ -37,12 +38,12 @@ class Converter:
             f.write(json_content)
 
 
-if __name__ == "__main__":
-    print(os.getcwd())
-    FILE_PATH = "/home/yagorezende/VSCodeProjects/TCC00314-Streaming/streaming_side/videos/RealState.mp4"
-    converter = Converter(FILE_PATH)
-    converter.convert_to("720p", saving_path="../../streaming_side/videos/")
-    converter.convert_to("480p", saving_path="../../streaming_side/videos/")
-    converter.convert_to("240p", saving_path="../../streaming_side/videos/")
-    print(converter.build_metadata())
-    converter.save_metadata()
+# if __name__ == "__main__":
+#     print(os.getcwd())
+#     FILE_PATH = "/home/yagorezende/VSCodeProjects/TCC00314-Streaming/streaming_side/videos/RealState.mp4"
+#     converter = Converter(FILE_PATH)
+#     converter.convert_to("720p", saving_path="../../streaming_side/videos/")
+#     converter.convert_to("480p", saving_path="../../streaming_side/videos/")
+#     converter.convert_to("240p", saving_path="../../streaming_side/videos/")
+#     print(converter.build_metadata())
+#     converter.save_metadata()
