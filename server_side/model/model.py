@@ -1,15 +1,33 @@
-import random
-from typing import List
-
 from util.constants import Service
 
 
 class User:
-    def __init__(self, _id=1, service=Service.PREMIUM):
+    def __init__(self, name: str, _id=1, service=Service.GUEST):
         self.id = _id
-        self.passcode = random.randint(1000, 9999)
+        self.name = name
         self.service = service
-        self.group: List[int] = []  # list of ids
+        self.groups = []
 
-    def save(self):
-        pass
+    def upgrade_user(self):
+        self.service = Service.PREMIUM
+
+    def to_dict(self):
+        answer = self.__dict__
+        answer["service"] = Service.to_string(self.service)
+        return answer
+
+
+class Group:
+    def __init__(self, name, _id=1):
+        self.name = name
+        self.id = _id
+        self.members = []
+
+    def remove_member(self, member_id: int):
+        self.members.remove(member_id)
+
+    def add_member(self, member_id: int):
+        self.members.append(member_id)
+
+    def to_dict(self):
+        return self.__dict__

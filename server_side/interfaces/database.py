@@ -1,5 +1,5 @@
 import sqlite3
-from server_side.util.constants import DATABASE
+from util.constants import DATABASE
 
 
 class DBManager:

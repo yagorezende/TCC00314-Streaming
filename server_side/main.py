@@ -1,5 +1,6 @@
 from api.api import API
 from model.node import Node
+from model.accounts_manager import AccountsManager
 from util.constants import CONTROLLER_PORT_CLIENT, CONTROLLER_PORT_STREAMING
 
 
@@ -8,8 +9,10 @@ class Main(Node):
         super().__init__()
         self.steaming_api = API(CONTROLLER_PORT_STREAMING)
         self.client_api = API(CONTROLLER_PORT_CLIENT)
+        self.AM = AccountsManager()
         self.add_child(self.steaming_api)
         self.add_child(self.client_api)
+        self.add_child(self.AM)
 
     def start(self):
         self.steaming_api.run()
