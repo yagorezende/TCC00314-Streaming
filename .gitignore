@@ -130,3 +130,6 @@ dmypy.json
 
 # Pycharm
 .idea/
+streaming_side/videos/*.mp4
+streaming_side/videos/*.wav
+streaming_side/videos/metadata/*.json
