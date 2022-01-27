@@ -5,10 +5,11 @@ from model.node import Node
 
 
 class AccountsManager(Node):
+    users: List[User] = []
+    groups: List[Group] = []
+
     def __init__(self):
         super().__init__()
-        self.users: List[User] = []
-        self.groups: List[Group] = []
 
     def add_user(self, name) -> User:
         user = User(name, _id=len(self.users))

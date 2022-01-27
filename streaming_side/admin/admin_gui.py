@@ -38,7 +38,7 @@ class ListVideosFrame(Frame):
         if file_path != None:
             full_filename_path = file_path.name
             filesize = os.path.getsize(full_filename_path)
-            filename = 'abc_' + os.path.basename(full_filename_path)
+            filename = os.path.basename(full_filename_path)
             storage_path = Path('../streaming_side/videos/' + filename).resolve()
             progress = tqdm.tqdm(range(filesize), f"Sending {filename}", unit="B", unit_scale=True, unit_divisor=1024)
             with open(storage_path, "wb") as fw, open(full_filename_path, "rb") as fr:
