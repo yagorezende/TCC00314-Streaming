@@ -36,7 +36,6 @@ class CurrentUserSingleton():
         self.name = ''
         self.service = ''
         self.groups = []
-
     
     def get(self):
         return {"id": self.id, "name": self.name, "service": self.service, "groups": self.groups}
@@ -92,7 +91,6 @@ class InitialFrame(Frame):
         current_user.set(resAsJson["content"])
         print(current_user.get())
         self.navigator()
-
 
     def sel(self):
         selection = "You selected the option " + str(self.type_var.get())
@@ -186,6 +184,9 @@ class ListVideosFrame(Frame):
         udp.sendall(bytesToSend)
         res = udp.recv(BUFF_SIZE)
         resAsJson = json.loads(res)
+        while not 'lista' in resAsJson.keys():
+            res = udp.recv(BUFF_SIZE)
+            resAsJson = json.loads(res)
         self.videos = resAsJson['lista']
         self.videos.sort()
         # end socket comm
@@ -199,11 +200,11 @@ class ListVideosFrame(Frame):
         for video in self.videos:
             curr_frame = Frame(self, pady=20, highlightbackground="#ffffff", highlightthickness=1, bd=0, relief=SUNKEN)
             Label(curr_frame, text=video, width=30).grid(column=0, row=0, pady=5, padx=5)
-            Button(curr_frame, text="720p (1280x720 pixels)", command=lambda video=video: navigator(video, "720p")).grid(
+            Button(curr_frame, text="720p (1280x720 pixels)", command=lambda video=video: navigator(video, "720p", group)).grid(
                 column=1, row=0, pady=5, padx=5)
-            Button(curr_frame, text="480p (854x480 pixels)", command=lambda video=video: navigator(video, "480p")).grid(
+            Button(curr_frame, text="480p (854x480 pixels)", command=lambda video=video: navigator(video, "480p", group)).grid(
                 column=2, row=0, pady=5, padx=5)
-            Button(curr_frame, text="240p (426x240 pixels)", command=lambda video=video: navigator(video, "240p")).grid(
+            Button(curr_frame, text="240p (426x240 pixels)", command=lambda video=video: navigator(video, "240p", group)).grid(
                 column=3, row=0, pady=5, padx=5)
 
             curr_frame.pack(fill=BOTH, expand='yes')
@@ -224,65 +225,72 @@ class ListVideosFrame(Frame):
 
 
 class VideoFrame(Frame):
-    def __init__(self, link, videoname, quality, navigator):
+    def __init__(self, link, videoname, quality, group, navigator):
         super().__init__(link)
 
-        # start socket comm
-        req = {"request": "REPRODUZIR_VIDEO", "video": videoname, "quality": quality}
-        bytesToSend = json.dumps(req).encode()
-        udp.sendall(bytesToSend)
-        audio_thread = threading.Thread(target=self.audio_stream, args=(videoname,))
-        audio_thread.start()
-        global close_stream
-        close_stream = False
-        fps, st, frames_to_count, cnt = (0, 0, 20, 0)
+        req = {"request": "GET_USER_INFORMATION", "id": 0}
+        res = self.message_server(req)
+        print(res)
+        
+        if res['content']['service'] == 'premium':
+            # start socket comm
+            req = {"request": "REPRODUZIR_VIDEO", "video": videoname, "quality": quality}
+            bytesToSend = json.dumps(req).encode()
+            udp.sendall(bytesToSend)
+            audio_thread = threading.Thread(target=self.audio_stream, args=(videoname,))
+            audio_thread.start()
+            global close_stream
+            close_stream = False
+            fps, st, frames_to_count, cnt = (0, 0, 20, 0)
 
-        while True:
-            try:
+            while True:
                 try:
-                    packet, _ = udp.recvfrom(BUFF_SIZE)
-                    info = json.loads(packet.decode("utf8"))
-                    # print(info)
-                    content = bytes()
-                    while len(content) < info.get("len"):
-                        packet, _ = udp.recvfrom(BUFF_SIZE)
-                        content += packet
-                        # print(len(content))
-
-                    # print("Content size:", len(content))
-                except Exception as e:
-                    print("jumping due:", e)
-                    continue
-
-                uncompressed = zlib.decompress(content)
-                data = pickle.loads(uncompressed)  # base64.b64decode(uncompressed,' /')
-                npdata = np.fromstring(data, dtype=np.uint8)
-                frame = cv2.imdecode(npdata, 1)
-                cv2.imshow("RECEIVING VIDEO", frame)
-
-                key = cv2.waitKey(1) & 0xFF
-                
-                if key == ord('q') or cv2.getWindowProperty('RECEIVING VIDEO',cv2.WND_PROP_VISIBLE) < 1:
-                    # udp.close()
-                    close_stream = True
-
-                    cv2.destroyAllWindows()
-                    break
-                if cnt == frames_to_count:
                     try:
-                        fps = round(frames_to_count / (time.time() - st))
-                        st = time.time()
-                        cnt = 0
-                    except:
-                        pass
-                cnt += 1
-            except Exception as e:
-                print(e)
-                # cv2.destroyAllWindows()
-                #break
+                        packet, _ = udp.recvfrom(BUFF_SIZE)
+                        info = json.loads(packet.decode("utf8"))
+                        content = bytes()
+                        while len(content) < info.get("len"):
+                            packet, _ = udp.recvfrom(BUFF_SIZE)
+                            content += packet
 
-        Label(self, text="Fim da exibição de: " + videoname + " em " + quality).pack()
-        Button(self, text="Voltar", command=navigator).pack(pady=20)
+                    except Exception as e:
+                        print("jumping due:", e)
+                        continue
+
+                    uncompressed = zlib.decompress(content)
+                    data = pickle.loads(uncompressed)  # base64.b64decode(uncompressed,' /')
+                    npdata = np.fromstring(data, dtype=np.uint8)
+                    frame = cv2.imdecode(npdata, 1)
+                    cv2.imshow("RECEIVING VIDEO", frame)
+
+                    key = cv2.waitKey(1) & 0xFF
+                    
+                    if key == ord('q') or cv2.getWindowProperty('RECEIVING VIDEO',cv2.WND_PROP_VISIBLE) < 1:
+                        # udp.close()
+                        close_stream = True
+
+                        cv2.destroyAllWindows()
+                        break
+                    if cnt == frames_to_count:
+                        try:
+                            fps = round(frames_to_count / (time.time() - st))
+                            st = time.time()
+                            cnt = 0
+                        except:
+                            pass
+                    cnt += 1
+                except Exception as e:
+                    print(e)
+                    # cv2.destroyAllWindows()
+                    #break
+            req = {"request": "PARAR_STREAMING"}
+            bytesToSend = json.dumps(req).encode()
+            udp.sendall(bytesToSend)
+            Label(self, text="Fim da exibição de: " + videoname + " em " + quality).pack()
+            Button(self, text="Voltar", command=lambda group=group: navigator(group)).pack(pady=20)
+        else: 
+            Label(self, text="Você não tem permissão para reproduzir vídeos. Por favor, mude sua classificação.").pack()
+            Button(self, text="Voltar", command=lambda group=group: navigator(group)).pack(pady=20)
 
     def audio_stream(self, videoname):
         audio_req = {"request": "GET_AUDIO", "video": videoname}
@@ -330,6 +338,15 @@ class VideoFrame(Frame):
         client_socket.close()
         # os._exit(1)
 
+    def message_server(self, data):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((HOST, 6060))
+            s.sendall(json.dumps(data).encode())
+            response = s.recv(1024)
+            if response:
+                return json.loads(response)
+            s.shutdown(socket.SHUT_RDWR)
+
 
 class App(Tk):
     def __init__(self):
@@ -351,9 +368,9 @@ class App(Tk):
         self.curr_frame.place(in_=self, anchor="c", relx=.5, rely=.5)
         return
 
-    def go_to_video(self, videoname, quality):
+    def go_to_video(self, videoname, quality, group):
         self.curr_frame.place_forget()
-        self.curr_frame = VideoFrame(self, videoname, quality, self.navigate_to_main)
+        self.curr_frame = VideoFrame(self, videoname, quality, group, self.list_videos)
         self.curr_frame.place(in_=self, anchor="c", relx=.5, rely=.5)
         return
 

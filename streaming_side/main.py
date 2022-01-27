@@ -19,6 +19,7 @@ host_ip = 'localhost'
 port = 5050
 WIDTH = 400
 QUALITY = {"720p": 1280, "480p": 854, "240p": 426}
+streaming = []
 
 
 def open_server():
@@ -72,14 +73,16 @@ def open_server():
 
         elif request.get("request") == "REPRODUZIR_VIDEO":
             try:
-
                 # TODO: mudar para grupos
                 video_name = request.get("video") + "_" + request.get("quality") + ".mp4"
                 quality = QUALITY[request.get("quality")]
+                if not client_addr in streaming:
+                    streaming.append(client_addr)
                 threading.Thread(target=start_stream, args=(server_socket, client_addr),
                                 kwargs=dict(width=quality, filename=video_name)).start()
             except:
                 print("error ocurred")
+
         elif request_type == "ADICIONAR_VIDEO":
             try:
                 filename = request.get("filename")
@@ -100,10 +103,12 @@ def open_server():
                         # update the progress bar
                         progress.update(len(bytes_read))
 
-                
-                
             except:
                 print("error adding video")
+
+        elif request.get("request") == "PARAR_STREAMING":
+            streaming.remove(client_addr)
+
         else:
             break
     audio_server.close()
@@ -139,28 +144,27 @@ def audio_stream(server_socket: socket.socket):
             request = json.loads(msg)
             if request.get("request") == "GET_AUDIO":                    
                 video_name = request.get("video")
-                t = threading.Thread(target=audio_stream_sender, args=(client_socket, video_name))
+                t = threading.Thread(target=audio_stream_sender, args=(client_socket, addr, video_name))
                 t.start()
         except:
             print("error_audio_sending")
             break
 
 
-def audio_stream_sender(client_socket, audio_name):
+def audio_stream_sender(client_socket, addr, audio_name):
     CHUNK = 1024 * 4
     wf = wave.open("videos/"+audio_name+".wav", 'rb')
     print('server listening at', (host_ip, (port - 1)))
     while True:
         if client_socket:
-            while True:
+            while addr in streaming:
                 try:
                     data = wf.readframes(CHUNK)
                     a = pickle.dumps(data)
                     message = struct.pack("Q", len(a)) + a
                     client_socket.sendall(message)
                 except:
-                    raise
-                    
+                    return
 
 
 def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
@@ -173,7 +177,7 @@ def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
     queue_thread = threading.Thread(target=video_stream_gen, args=(queue, vid))
     queue_thread.start()
 
-    while True:
+    while client_addr in streaming:
         try:
             frame = queue.get()
 
@@ -187,7 +191,7 @@ def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
             server_socket.sendto(json.dumps(data).encode(), client_addr)
             starting_point = 0
             file_size = 0
-            while starting_point < len(compressed):
+            while starting_point < len(compressed) and client_addr in streaming:
                 # splitting the data
                 data = compressed[starting_point: int(starting_point + FRAME_SIZE)]
                 file_size += len(data)
