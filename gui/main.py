@@ -1,3 +1,4 @@
+from multiprocessing.dummy import current_process
 import os
 import pickle
 import struct
@@ -25,20 +26,82 @@ tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 dest = (HOST, PORT)
 udp.connect(dest)
 audio_udp.connect((HOST, PORT-1))
+tcp_sock.connect((HOST, TCP_PORT))
 
+
+class CurrentUserSingleton():
+    def __init__(self):
+        print('singleton created null')
+        self.id = -999
+        self.name = ''
+        self.service = ''
+        self.groups = []
+
+    
+    def get(self):
+        return {"id": self.id, "name": self.name, "service": self.service, "groups": self.groups}
+
+    def set(self, user):
+        self.id = user["id"]
+        self.name = user["name"]
+        self.service = user["service"]
+        self.groups = user["groups"]
+
+    def reset(self):
+        self.id = -999
+        self.name = ''
+        self.service = ''
+        self.groups = []
+
+    def has_curr_user(self):
+        return self.id != -999
+    
+global current_user 
+current_user = CurrentUserSingleton()
 
 class InitialFrame(Frame):
     def __init__(self, link, navigator, quit_app):
         super().__init__(link)
+        self.navigator = navigator
         self.main_label = Label(self, text="UFFlix", font=("Arial", 25))
-        self.login_btn = Button(self, text="Entrar na app!", command=navigator, width=20)
-        self.quit_button = Button(self, text="Sair!", command=lambda: quit_app(), width=20)
+        self.login_btn = Button(self, text="Entrar na app!", command=lambda: self.login_app(), width=20)
+        self.quit_button = Button(self, text="Sair!", command=lambda: self.exit_app(quit_app), width=20)
         self.username_label = Label(self, text="username", pady=10, padx=10).grid(row=1, column=0)
         self.username_entry = Entry(self, width=20)
+        self.type_label = Label(self, text="tipo do usuario",pady=10, padx=10).grid(row=2, column=0)
+        self.type_var = StringVar()
+        self.premium_radio_btn = Radiobutton(self, text="Premium", variable=self.type_var, value='premium',command=self.sel)
+        self.guest_radio_btn = Radiobutton(self, text="Guest", variable=self.type_var, value='guest',command=self.sel)
         self.main_label.grid(column=0, row=0, columnspan=2)
         self.username_entry.grid(column=1, row=1)
         self.login_btn.grid(column=0, row=3, columnspan=2, pady=10)
         self.quit_button.grid(column=0, row=4, columnspan=2)
+        self.premium_radio_btn.grid(column=1, row=2)
+        self.guest_radio_btn.grid(column=2, row=2)
+        self.premium_radio_btn.select()
+
+    def login_app(self):
+        name = self.username_entry.get()
+        type = str(self.type_var.get())
+        req = {"request": "ENTRAR_NA_APP", "name": name, "service": type, "ip": "127.0.0.1"}
+        bytesToSend = json.dumps(req).encode()
+        tcp_sock.sendall(bytesToSend)
+        res = tcp_sock.recv(BUFF_SIZE)
+        resAsJson = json.loads(res)
+        global current_user
+        current_user.set(resAsJson["content"])
+        print(current_user.get())
+        self.navigator()
+
+
+    def sel(self):
+        selection = "You selected the option " + str(self.type_var.get())
+        print(selection)        
+
+    def exit_app(self, quitter):
+        global current_user
+        current_user.reset()
+        quitter()
 
 
 class GroupsFrame(Frame):
