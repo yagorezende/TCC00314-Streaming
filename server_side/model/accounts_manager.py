@@ -35,6 +35,9 @@ class AccountsManager(Node):
         self.groups.append(group)
         return group.id
 
+    def get_groups(self) -> int:
+        return self.groups
+
     def get_user_from_group(self, gid: int):
         return self.groups[gid]
 

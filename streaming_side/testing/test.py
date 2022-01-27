@@ -14,7 +14,7 @@ host_ip = 'localhost'  # socket.gethostbyname(host_name)
 print(host_ip)
 port = 5050
 qualities = ["720p", "480p", "240p"]
-msgFromClient = {"request": "REPRODUZIR_VIDEO", "quality": qualities[1], "video": "video2.mp4"}
+msgFromClient = {"request": "PLAY_VIDEO_TO_GROUP", "quality": qualities[1], "video": "video2.mp4"}
 message = json.dumps(msgFromClient).encode()
 
 client_socket.sendto(message, (host_ip, port))

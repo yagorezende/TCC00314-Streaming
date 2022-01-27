@@ -40,6 +40,8 @@ class API(Node):
                 return self._logout_or_remove(request)
             elif _type == "CRIAR_GRUPO":
                 return self._create_group(request)
+            elif _type == "GET_GRUPOS":
+                return self._get_groups(request)
             elif _type == "ADD_USUARIO_GRUPO":
                 return self._add_user_to_group(request)
             elif _type == "VER_GRUPO":
@@ -74,6 +76,14 @@ class API(Node):
         gid = self.get_parent().AM.add_group(request.get("name"))
         self.get_parent().AM.add_user_to_group(gid, request.get("id"))
         return {"answer": _type, "content": {"gid": gid}}
+
+    def _get_groups(self, request: dict) -> dict:
+        _type = "GET_GRUPOS_ACK"
+        groups = self.get_parent().AM.get_groups()
+        formatted = []
+        for group in groups:
+            formatted.append(group.to_dict())
+        return {"answer": _type, "content": {"groups": formatted}}
 
     def _add_user_to_group(self, request: dict) -> dict:
         _type = "ADD_USUARIO_GRUPO_ACK"

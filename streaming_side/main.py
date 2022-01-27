@@ -6,6 +6,7 @@ import wave
 from os import listdir
 from os.path import isfile, join
 import cv2, imutils, socket, time, base64
+from cv2 import add
 import zlib
 import queue as pyqueue
 import tqdm
@@ -20,9 +21,15 @@ port = 5050
 WIDTH = 400
 QUALITY = {"720p": 1280, "480p": 854, "240p": 426}
 streaming = []
+streaming_thread = {}
 
 
 def open_server():
+    # get all groups
+    grupos_info_req = {"request": "GET_GRUPOS"}
+    grupos_info = message_server(grupos_info_req)
+    grupos = grupos_info['content']['groups']
+
     # video server
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
@@ -34,8 +41,6 @@ def open_server():
     audio_server.bind((host_ip, (port - 1)))
     audio_server.listen(10)
     threading.Thread(target=audio_stream, args=(audio_server,)).start()
-
-    grupos = [{'nome': 'Família', 'usuarios': []}, {'nome': 'Amigos', 'usuarios': []}]
 
     print('Escutando em: ', socket_address)
     running = True
@@ -59,26 +64,50 @@ def open_server():
                     server_socket.sendto(json.dumps(send_message).encode(), client_addr)
 
         elif request.get("request") == "LISTAR_GRUPOS":
-            grupos[0]['usuarios'].append(client_addr) #temp
-            grupos_pertence = [d for d in grupos if client_addr in d['usuarios']]
+            user_id = request.get("userId")
+
+            grupos_info_req = {"request": "GET_GRUPOS"}
+            grupos_info = message_server(grupos_info_req) #atualiza os grupos
+            grupos = grupos_info['content']['groups']
+            grupos_pertence = [d for d in grupos if user_id in d['members']]
             send_message = {"request": "LISTAR_GRUPOS", "grupos": grupos_pertence}
             server_socket.sendto(json.dumps(send_message).encode(), client_addr)
 
         elif request.get("request") == "CRIAR_GRUPO":
-            name = request.get("nome")
-            grupos.append({'nome': name, 'usuarios': [client_addr, ]})
-            send_message = {"request": "CRIAR_GRUPO", "success": True}
+            user_id = request.get("userId")
+            group_name = request.get("groupName")
+            create_request = {"request": "CRIAR_GRUPO", "id": user_id, "name": group_name}
+            create = message_server(create_request)
+            group_id = create['content']['gid']
+            send_message = {"request": "CRIAR_GRUPO", "gid": group_id}
             server_socket.sendto(json.dumps(send_message).encode(), client_addr)
-            print(grupos)
 
         elif request.get("request") == "REPRODUZIR_VIDEO":
+            groupId = request.get("groupId")
+            if groupId in streaming_thread.keys():
+                send_message = {"request": "REPRODUZIR_VIDEO", "streaming_is_on": True}
+                server_socket.sendto(json.dumps(send_message).encode(), client_addr)
+                streaming_thread[groupId].append(client_addr)
+            else:
+                send_message = {"request": "REPRODUZIR_VIDEO", "streaming_is_on": False}
+                server_socket.sendto(json.dumps(send_message).encode(), client_addr)
+
+
+        elif request.get("request") == "PLAY_VIDEO_TO_GROUP":
+            groupId = request.get("groupId")
+            # current_group_req = {"request": "VER_GRUPO", "gid": groupId}
+            # current_group = message_server(current_group_req)
+            # print("\n*\n")
+            # print("grupo: \n")
+            # print(current_group)
+            # print("\n*\n")
+            streaming_thread[groupId] = [client_addr, ]
             try:
-                # TODO: mudar para grupos
                 video_name = request.get("video") + "_" + request.get("quality") + ".mp4"
                 quality = QUALITY[request.get("quality")]
                 if not client_addr in streaming:
                     streaming.append(client_addr)
-                threading.Thread(target=start_stream, args=(server_socket, client_addr),
+                threading.Thread(target=start_stream, args=(server_socket, client_addr, groupId),
                                 kwargs=dict(width=quality, filename=video_name)).start()
             except:
                 print("error ocurred")
@@ -112,6 +141,15 @@ def open_server():
         else:
             break
     audio_server.close()
+
+def message_server(data):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((host_ip, 6060))
+        s.sendall(json.dumps(data).encode())
+        response = s.recv(1024)
+        if response:
+            return json.loads(response)
+        s.shutdown(socket.SHUT_RDWR)
 
 
 def list_videos(server_socket, client_addr):
@@ -167,7 +205,7 @@ def audio_stream_sender(client_socket, addr, audio_name):
                     return
 
 
-def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
+def start_stream(server_socket, client_addr, groupId, filename="video1.mp4", width=400):
     vid = cv2.VideoCapture("videos/" + filename)  # vem do client qual video reproduzir
     FPS = vid.get(cv2.CAP_PROP_FPS)  # fps desejado
     TS = 1 / FPS  # tempo por frame, importante para a sync com audio
@@ -188,7 +226,8 @@ def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
             compressed = zlib.compress(message, 9)
             # print("Message Size:", len(compressed))
             data = {"frame": cnt, "len": len(compressed)}
-            server_socket.sendto(json.dumps(data).encode(), client_addr)
+            for addr in streaming_thread[groupId]:
+                server_socket.sendto(json.dumps(data).encode(), addr)
             starting_point = 0
             file_size = 0
             while starting_point < len(compressed) and client_addr in streaming:
@@ -196,7 +235,8 @@ def start_stream(server_socket, client_addr, filename="video1.mp4", width=400):
                 data = compressed[starting_point: int(starting_point + FRAME_SIZE)]
                 file_size += len(data)
                 # print("Sending Message:", len(data), "sent ->", file_size)
-                server_socket.sendto(data, client_addr)
+                for addr in streaming_thread[groupId]:
+                    server_socket.sendto(data, addr)
                 starting_point += FRAME_SIZE
 
             if cnt == frames_to_count:
