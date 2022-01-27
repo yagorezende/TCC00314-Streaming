@@ -105,7 +105,7 @@ class InitialFrame(Frame):
 
 
 class GroupsFrame(Frame):
-    def __init__(self, link, navigator):
+    def __init__(self, link, navigator, quit_app):
         super().__init__(link)
 
         req = {"request": "LISTAR_GRUPOS"}
@@ -127,6 +127,8 @@ class GroupsFrame(Frame):
 
         Button(curr_frame, text="+ novo grupo", command=lambda : self.new_group_dialog(link, navigator), width=14, height=7, font=40).grid(
                 column=curr_column, row=0, pady=5, padx=5)
+        Button(self, text="Sair!", command=lambda: self.exit_app(quit_app), padx=50).pack(pady=20)
+      
         curr_frame.pack(fill=BOTH, expand='yes')
 
     def new_group_dialog(self, link, navigator, event=None):        
@@ -163,6 +165,16 @@ class GroupsFrame(Frame):
     def close_modal(self, event=None):
         self.modal.destroy()
 
+    def exit_app(self, quitter):
+        global current_user
+        user_id = current_user.get()["id"]
+        req = {"request": "SAIR_DA_APP", "id": user_id}
+        bytesToSend = json.dumps(req).encode()
+        tcp_sock.sendall(bytesToSend)
+        res = tcp_sock.recv(BUFF_SIZE)
+        resAsJson = json.loads(res)
+        current_user.reset()
+        quitter()
 
 class ListVideosFrame(Frame):
     def __init__(self, link, back, navigator, group, quit_app):
@@ -197,7 +209,18 @@ class ListVideosFrame(Frame):
             curr_frame.pack(fill=BOTH, expand='yes')
             cur_row += 1
 
-        Button(self, text="sair", command=lambda: quit_app(), padx=50).pack(pady=20)
+        Button(self, text="Sair", command=lambda: self.exit_app(quit_app), padx=50).pack(pady=20)
+
+    def exit_app(self, quitter):
+        global current_user
+        user_id = current_user.get()["id"]
+        req = {"request": "SAIR_DA_APP", "id": user_id}
+        bytesToSend = json.dumps(req).encode()
+        tcp_sock.sendall(bytesToSend)
+        res = tcp_sock.recv(BUFF_SIZE)
+        resAsJson = json.loads(res)
+        current_user.reset()
+        quitter()
 
 
 class VideoFrame(Frame):
@@ -318,7 +341,7 @@ class App(Tk):
 
     def navigate_to_main(self):
         self.curr_frame.place_forget()
-        self.curr_frame = GroupsFrame(self, self.list_videos)
+        self.curr_frame = GroupsFrame(self, self.list_videos, self.sair_da_app)
         self.curr_frame.place(in_=self, anchor="c", relx=.5, rely=.5)
         return
 
