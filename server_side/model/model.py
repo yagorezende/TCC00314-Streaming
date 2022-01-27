@@ -16,6 +16,9 @@ class User:
         answer["service"] = Service.to_string(self.service)
         return answer
 
+    def remove_group(self, gid):
+        self.groups.remove(gid)
+
 
 class Group:
     def __init__(self, name, _id=1):

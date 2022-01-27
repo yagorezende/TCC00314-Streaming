@@ -49,7 +49,7 @@ def open_server():
         print('Conexão de: ', client_addr)
         request = json.loads(msg)
         print(request)
-        request_type  = request.get("request")
+        request_type = request.get("request")
 
         if request_type == "LISTAR_VIDEOS":
             list_videos(server_socket, client_addr)
@@ -67,7 +67,7 @@ def open_server():
             user_id = request.get("userId")
 
             grupos_info_req = {"request": "GET_GRUPOS"}
-            grupos_info = message_server(grupos_info_req) #atualiza os grupos
+            grupos_info = message_server(grupos_info_req)  # atualiza os grupos
             grupos = grupos_info['content']['groups']
             grupos_pertence = [d for d in grupos if user_id in d['members']]
             send_message = {"request": "LISTAR_GRUPOS", "grupos": grupos_pertence}
@@ -83,7 +83,7 @@ def open_server():
             server_socket.sendto(json.dumps(send_message).encode(), client_addr)
 
         elif request.get("request") == "REPRODUZIR_VIDEO":
-            groupId = request.get("groupId")
+            groupId = request.get("gid")
             if groupId in streaming_thread.keys():
                 send_message = {"request": "REPRODUZIR_VIDEO", "streaming_is_on": True}
                 server_socket.sendto(json.dumps(send_message).encode(), client_addr)
@@ -108,7 +108,7 @@ def open_server():
                 if not client_addr in streaming:
                     streaming.append(client_addr)
                 threading.Thread(target=start_stream, args=(server_socket, client_addr, groupId),
-                                kwargs=dict(width=quality, filename=video_name)).start()
+                                 kwargs=dict(width=quality, filename=video_name)).start()
             except:
                 print("error ocurred")
 
@@ -118,12 +118,13 @@ def open_server():
                 filesize = request.get("filesize")
                 # start receiving the file from the socket
                 # and writing to the file stream
-                progress = tqdm.tqdm(range(filesize), f"Receiving {filename}", unit="B", unit_scale=True, unit_divisor=1024)
+                progress = tqdm.tqdm(range(filesize), f"Receiving {filename}", unit="B", unit_scale=True,
+                                     unit_divisor=1024)
                 with open(filename, "wb") as f:
                     while True:
                         # read 1024 bytes from the socket (receive)
                         bytes_read = server_socket.recv(SEND_VIDEO_BUFFER_SIZE)
-                        if not bytes_read:    
+                        if not bytes_read:
                             # nothing is received
                             # file transmitting is done
                             break
@@ -141,6 +142,7 @@ def open_server():
         else:
             break
     audio_server.close()
+
 
 def message_server(data):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -180,7 +182,7 @@ def audio_stream(server_socket: socket.socket):
             client_socket, addr = server_socket.accept()
             msg = client_socket.recv(4 * 1024)
             request = json.loads(msg)
-            if request.get("request") == "GET_AUDIO":                    
+            if request.get("request") == "GET_AUDIO":
                 video_name = request.get("video")
                 t = threading.Thread(target=audio_stream_sender, args=(client_socket, addr, video_name))
                 t.start()
@@ -191,7 +193,7 @@ def audio_stream(server_socket: socket.socket):
 
 def audio_stream_sender(client_socket, addr, audio_name):
     CHUNK = 1024 * 4
-    wf = wave.open("videos/"+audio_name+".wav", 'rb')
+    wf = wave.open("videos/" + audio_name + ".wav", 'rb')
     print('server listening at', (host_ip, (port - 1)))
     while True:
         if client_socket:

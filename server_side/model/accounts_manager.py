@@ -26,7 +26,9 @@ class AccountsManager(Node):
         return None
 
     def remove_user(self, _id):
-        self.users.pop(_id)
+        user = self.users.pop(_id)
+        for group in user.groups:
+            self.remove_group_member(group, user.id)
 
     def upgrade_user(self, _id):
         self.users[_id].upgrade_user()
@@ -48,3 +50,4 @@ class AccountsManager(Node):
 
     def remove_group_member(self, _gid: int, _uid: int):
         self.groups[_gid].remove_member(_uid)
+        self.users[_uid].remove_group(_gid)
