@@ -5,6 +5,7 @@ import threading
 from tkinter import *
 import socket
 import json
+from tokenize import group
 import cv2
 import base64
 import numpy as np
@@ -38,8 +39,68 @@ class InitialFrame(Frame):
         self.quit_button.grid(column=0, row=4, columnspan=2)
 
 
+class GroupsFrame(Frame):
+    def __init__(self, link, navigator):
+        super().__init__(link)
+
+        req = {"request": "LISTAR_GRUPOS"}
+        bytesToSend = json.dumps(req).encode()
+        udp.sendall(bytesToSend)
+        res = udp.recv(BUFF_SIZE)
+        resAsJson = json.loads(res)
+        groups = resAsJson['grupos']
+
+        title = Label(self, text="Grupos", pady=10, font=("Arial", 25))
+        title.pack()
+        curr_frame = Frame(self, bd=0, relief=SUNKEN)
+        curr_column = 0
+        for group in groups:
+            Button(curr_frame, text=group['nome'], command=lambda group=group: navigator(group['nome']), width=14, height=7, font=40, background='#4169e1').grid(
+                column=curr_column, row=0, pady=5, padx=5)
+            curr_frame.pack(fill=BOTH, expand='yes')
+            curr_column += 1
+
+        Button(curr_frame, text="+ novo grupo", command=lambda : self.new_group_dialog(link, navigator), width=14, height=7, font=40).grid(
+                column=curr_column, row=0, pady=5, padx=5)
+        curr_frame.pack(fill=BOTH, expand='yes')
+
+    def new_group_dialog(self, link, navigator, event=None):        
+        self.valor = StringVar()
+        self.valor.set("")
+ 
+        self.modal = Toplevel(link)
+        self.modal.transient(link)
+        self.modal.grab_set()
+        self.modal.title("Novo grupo")
+        Label(self.modal, text="Digite o nome do novo grupo:", pady=5, padx=5).pack()
+        self.input = Entry(self.modal, text=self.valor.get())
+        self.input.bind("<Escape>", self.close_modal)
+        self.input.pack(padx=15)
+        self.input.focus_set()
+        b = Button(self.modal, text="OK", command=lambda : self.create_group(navigator, self.input.get()))
+        b.pack(pady=5)
+
+    def create_group(self, navigator, nome):
+        if nome != "":
+            req = {"request": "CRIAR_GRUPO", 'nome': nome}
+            bytesToSend = json.dumps(req).encode()
+            udp.sendall(bytesToSend)
+            res = udp.recv(BUFF_SIZE)
+            resAsJson = json.loads(res)
+            if resAsJson['success']:
+                self.close_modal()
+                navigator(nome)
+            else:
+                self.close_modal()
+        else:
+            self.close_modal()
+
+    def close_modal(self, event=None):
+        self.modal.destroy()
+
+
 class ListVideosFrame(Frame):
-    def __init__(self, link, navigator, quit_app):
+    def __init__(self, link, back, navigator, group, quit_app):
         super().__init__(link)
 
         # start socket comm
@@ -53,13 +114,16 @@ class ListVideosFrame(Frame):
         # end socket comm
 
         cur_row = 0
-        title = Label(self, text="Lista de vídeos disponiveis", pady=10, font=("Arial", 25))
+        title = Frame(self, pady=20, bd=0)
+        Label(title, text=group, pady=10, font=("Arial", 20)).grid(column=0, row=0, pady=5, padx=5)
+        Button(title, text="Trocar de grupo", command=lambda : back()).grid(column=1, row=0, pady=5, padx=5)
         title.pack()
+        Label(self, text="Lista de vídeos disponiveis", font=("Arial", 25)).pack()
         for video in self.videos:
             curr_frame = Frame(self, pady=20, highlightbackground="#ffffff", highlightthickness=1, bd=0, relief=SUNKEN)
             Label(curr_frame, text=video, width=30).grid(column=0, row=0, pady=5, padx=5)
-            Button(curr_frame, text="720p (1280x720 pixels)",
-                   command=lambda video=video: navigator(video, "720p")).grid(column=1, row=0, pady=5, padx=5)
+            Button(curr_frame, text="720p (1280x720 pixels)", command=lambda video=video: navigator(video, "720p")).grid(
+                column=1, row=0, pady=5, padx=5)
             Button(curr_frame, text="480p (854x480 pixels)", command=lambda video=video: navigator(video, "480p")).grid(
                 column=2, row=0, pady=5, padx=5)
             Button(curr_frame, text="240p (426x240 pixels)", command=lambda video=video: navigator(video, "240p")).grid(
@@ -176,7 +240,7 @@ class VideoFrame(Frame):
                 stream.close()
                 break
         client_socket.close()
-        os._exit(1)
+        # os._exit(1)
 
 
 class App(Tk):
@@ -189,7 +253,13 @@ class App(Tk):
 
     def navigate_to_main(self):
         self.curr_frame.place_forget()
-        self.curr_frame = ListVideosFrame(self, self.go_to_video, self.sair_da_app)
+        self.curr_frame = GroupsFrame(self, self.list_videos)
+        self.curr_frame.place(in_=self, anchor="c", relx=.5, rely=.5)
+        return
+
+    def list_videos(self, group):
+        self.curr_frame.place_forget()
+        self.curr_frame = ListVideosFrame(self, self.navigate_to_main, self.go_to_video, group, self.sair_da_app)
         self.curr_frame.place(in_=self, anchor="c", relx=.5, rely=.5)
         return
 
