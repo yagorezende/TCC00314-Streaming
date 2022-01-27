@@ -107,28 +107,30 @@ class GroupsFrame(Frame):
     def __init__(self, link, navigator, quit_app):
         super().__init__(link)
 
-        req = {"request": "LISTAR_GRUPOS"}
-        bytesToSend = json.dumps(req).encode()
-        udp.sendall(bytesToSend)
-        res = udp.recv(BUFF_SIZE)
-        resAsJson = json.loads(res)
-        groups = resAsJson['grupos']
+        global current_user
+        groups = []
+        for group_id in current_user.groups:
+            bytesToSend = json.dumps({"request": "VER_GRUPO", "gid": group_id}).encode()
+            tcp_sock.sendall(bytesToSend)
+            answer = tcp_sock.recv(1024)
+            groups.append(json.loads(answer)["content"])
+            print(answer)
 
         title = Label(self, text="Grupos", pady=10, font=("Arial", 25))
         title.pack()
         curr_frame = Frame(self, bd=0, relief=SUNKEN)
         curr_column = 0
         for group in groups:
-            Button(curr_frame, text=group['nome'], command=lambda group=group: navigator(group['nome']), width=14, height=7, font=40, background='#4169e1').grid(
+            Button(curr_frame, text=group['name'], command=lambda group=group: navigator(group['name'], group['id']), width=14, height=7, font=40, background='#4169e1').grid(
                 column=curr_column, row=0, pady=5, padx=5)
             curr_frame.pack(fill=BOTH, expand='yes')
             curr_column += 1
 
         Button(curr_frame, text="+ novo grupo", command=lambda : self.new_group_dialog(link, navigator), width=14, height=7, font=40).grid(
                 column=curr_column, row=0, pady=5, padx=5)
+        curr_frame.pack(fill=BOTH, expand='yes')
         Button(self, text="Sair!", command=lambda: self.exit_app(quit_app), padx=50).pack(pady=20)
       
-        curr_frame.pack(fill=BOTH, expand='yes')
 
     def new_group_dialog(self, link, navigator, event=None):        
         self.modal = Toplevel(link)
@@ -147,14 +149,14 @@ class GroupsFrame(Frame):
         if nome != "":
             global current_user
             id = current_user.get()["id"]
-            req = {"request": "CRIAR_GRUPO","id": id,  'nome': nome}
+            req = {"request": "CRIAR_GRUPO", "userId": id, 'groupName': nome}
             bytesToSend = json.dumps(req).encode()
-            tcp_sock.sendall(bytesToSend)
-            res = tcp_sock.recv(BUFF_SIZE)
+            udp.sendall(bytesToSend)
+            res = udp.recv(BUFF_SIZE)
             resAsJson = json.loads(res)
-            if resAsJson['answer'] == "CRIAR_GRUPO_ACK":
+            if resAsJson['gid']:
                 self.close_modal()
-                navigator(nome, id)
+                navigator(nome, resAsJson['gid'])
             else:
                 self.close_modal()
         else:
@@ -175,55 +177,94 @@ class GroupsFrame(Frame):
         quitter()
 
 class ListVideosFrame(Frame):
-    def __init__(self, link, back, navigator, group, groupId ,quit_app, manage_group):
+    def __init__(self, link, back, navigator, group, groupId, quit_app, manage_group):
         super().__init__(link)
 
-        # start socket comm
-        req = {"request": "LISTAR_VIDEOS"}
+        # call streaming to ask if streaming video is on
+        #if so: adds addr to thred
+        req = {"request": "REPRODUZIR_VIDEO", 'groupId': groupId}
         bytesToSend = json.dumps(req).encode()
         udp.sendall(bytesToSend)
-        res = udp.recv(BUFF_SIZE)
+        res = udp.recv(BUFF_SIZE)   
         resAsJson = json.loads(res)
-        while not 'lista' in resAsJson.keys():
-            res = udp.recv(BUFF_SIZE)
+        if resAsJson["streaming_is_on"]:
+            fps, st, frames_to_count, cnt = (0, 0, 20, 0)
+            while True:
+                try:
+                    try:
+                        packet, _ = udp.recvfrom(BUFF_SIZE)
+                        info = json.loads(packet.decode("utf8"))
+                        content = bytes()
+                        while len(content) < info.get("len"):
+                            packet, _ = udp.recvfrom(BUFF_SIZE)
+                            content += packet
+
+                    except Exception as e:
+                        print("jumping due:", e)
+                        continue
+
+                    uncompressed = zlib.decompress(content)
+                    data = pickle.loads(uncompressed)  # base64.b64decode(uncompressed,' /')
+                    npdata = np.fromstring(data, dtype=np.uint8)
+                    frame = cv2.imdecode(npdata, 1)
+                    cv2.imshow("RECEIVING VIDEO", frame)
+
+                    key = cv2.waitKey(1) & 0xFF
+                    
+                    if key == ord('q') or cv2.getWindowProperty('RECEIVING VIDEO',cv2.WND_PROP_VISIBLE) < 1:
+                        # udp.close()
+                        close_stream = True
+
+                        cv2.destroyAllWindows()
+                        break
+                    if cnt == frames_to_count:
+                        try:
+                            fps = round(frames_to_count / (time.time() - st))
+                            st = time.time()
+                            cnt = 0
+                        except:
+                            pass
+                    cnt += 1
+                except Exception as e:
+                    print(e)
+                    # cv2.destroyAllWindows()
+                    #break
+        else:
+            #if not: list videos
+            # start socket comm
+            req = {"request": "LISTAR_VIDEOS", 'userId': current_user.get()["id"]}
+            bytesToSend = json.dumps(req).encode()
+            udp.sendall(bytesToSend)
+            res = udp.recv(BUFF_SIZE)   
             resAsJson = json.loads(res)
-        self.videos = resAsJson['lista']
-        self.videos.sort()
-        # end socket comm
+            while not 'lista' in resAsJson.keys():
+                res = udp.recv(BUFF_SIZE)
+                resAsJson = json.loads(res)
+            self.videos = resAsJson['lista']
+            self.videos.sort()
+            # end socket comm
 
-        cur_row = 0
-        title = Frame(self, pady=20, bd=0)
-        title.pack()
-        Label(title, text=group + " - " +  str(groupId), pady=10, font=("Arial", 20)).grid(column=0, row=0, pady=5, padx=5)
-        Button(title, text="Trocar de grupo", command=lambda : back()).grid(column=1, row=0, pady=5, padx=5)
-        Button(title, text="Gerenciar grupo", command=lambda : manage_group(group, groupId)).grid(column=2, row=0, pady=5, padx=5)
-        Label(self, text="Lista de vídeos disponiveis", font=("Arial", 25)).pack()
-        for video in self.videos:
-            curr_frame = Frame(self, pady=20, highlightbackground="#ffffff", highlightthickness=1, bd=0, relief=SUNKEN)
-            Label(curr_frame, text=video, width=30).grid(column=0, row=0, pady=5, padx=5)
-            Button(curr_frame, text="720p (1280x720 pixels)", command=lambda video=video: navigator(video, "720p", group, groupId)).grid(
-                column=1, row=0, pady=5, padx=5)
-            Button(curr_frame, text="480p (854x480 pixels)", command=lambda video=video: navigator(video, "480p", group, groupId)).grid(
-                column=2, row=0, pady=5, padx=5)
-            Button(curr_frame, text="240p (426x240 pixels)", command=lambda video=video: navigator(video, "240p", group, groupId)).grid(
-                column=3, row=0, pady=5, padx=5)
+            cur_row = 0
+            title = Frame(self, pady=20, bd=0)
+            title.pack()
+            Label(title, text=group + " - " +  str(groupId), pady=10, font=("Arial", 20)).grid(column=0, row=0, pady=5, padx=5)
+            Button(title, text="Trocar de grupo", command=lambda : back()).grid(column=1, row=0, pady=5, padx=5)
+            Button(title, text="Gerenciar grupo", command=lambda : manage_group(group, groupId)).grid(column=2, row=0, pady=5, padx=5)
+            Label(self, text="Lista de vídeos disponiveis", font=("Arial", 25)).pack()
+            for video in self.videos:
+                curr_frame = Frame(self, pady=20, highlightbackground="#ffffff", highlightthickness=1, bd=0, relief=SUNKEN)
+                Label(curr_frame, text=video, width=30).grid(column=0, row=0, pady=5, padx=5)
+                Button(curr_frame, text="720p (1280x720 pixels)", command=lambda video=video: navigator(video, "720p", group, groupId)).grid(
+                    column=1, row=0, pady=5, padx=5)
+                Button(curr_frame, text="480p (854x480 pixels)", command=lambda video=video: navigator(video, "480p", group, groupId)).grid(
+                    column=2, row=0, pady=5, padx=5)
+                Button(curr_frame, text="240p (426x240 pixels)", command=lambda video=video: navigator(video, "240p", group, groupId)).grid(
+                    column=3, row=0, pady=5, padx=5)
 
-            curr_frame.pack(fill=BOTH, expand='yes')
-            cur_row += 1
+                curr_frame.pack(fill=BOTH, expand='yes')
+                cur_row += 1
 
-        Button(self, text="Sair", command=lambda: self.exit_app(quit_app), padx=50).pack(pady=20)
-
-    def exit_app(self, quitter):
-        global current_user
-        user_id = current_user.get()["id"]
-        req = {"request": "SAIR_DA_APP", "id": user_id}
-        bytesToSend = json.dumps(req).encode()
-        tcp_sock.sendall(bytesToSend)
-        res = tcp_sock.recv(BUFF_SIZE)
-        resAsJson = json.loads(res)
-        current_user.reset()
-        quitter()
-
+            Button(self, text="Voltar", command=lambda : back(), padx=50).pack(pady=20)
 
 class GroupManager(Frame):
     def __init__(self, link, back, navigator, quit_app,  group, groupId):
@@ -252,7 +293,7 @@ class GroupManager(Frame):
     def add_to_group(self,  navigator):
         id = int(self.input.get())
         if id >= 0:
-            req = {"request": "ADD_USUARIO_GRUPO","gid": self.groupId,  'id': id}
+            req = {"request": "ADD_USUARIO_GRUPO", "gid": self.groupId,  'id': id}
             bytesToSend = json.dumps(req).encode()
             tcp_sock.sendall(bytesToSend)
             res = tcp_sock.recv(BUFF_SIZE)
@@ -302,7 +343,6 @@ class GroupManager(Frame):
             result = tcp_sock.recv(BUFF_SIZE)
             resultAsJson = json.loads(result)
             members_names.append(resultAsJson["content"])
-        print(members_names)
         title = Frame(self, pady=20, bd=0)
         title.pack()
         Label(self, text="Usuarios no grupo - " + self.group, font=("Arial", 25)).pack()
@@ -317,19 +357,15 @@ class GroupManager(Frame):
             cur_row += 1
         Button(title, text="Trocar de grupo", command=lambda : self.back()).grid(column=1, row=0, pady=5, padx=5)
         Button(title, text="Adicionar ao grupo", command=lambda : self.add_user_dialog(self.link, self.navigator)).grid(column=1, row=0, pady=5, padx=5)
-        Button(self, text="Sair", command=lambda: self.exit_app(self.quit_app), padx=50).pack(pady=20)
+        Button(self, text="Voltar", command=lambda group=self.group: self.back(group, self.groupId), padx=50).pack(pady=20)
 
 class VideoFrame(Frame):
-    def __init__(self, link, videoname, quality, group, navigator, groupId):
+    def __init__(self, link, videoname, quality, navigator, group, groupId):
         super().__init__(link)
 
-        req = {"request": "GET_USER_INFORMATION", "id": 0}
-        res = self.message_server(req)
-        print(res)
-        
-        if res['content']['service'] == 'premium':
+        if current_user.get()["service"] == 'premium':
             # start socket comm
-            req = {"request": "REPRODUZIR_VIDEO", "video": videoname, "quality": quality}
+            req = {"request": "PLAY_VIDEO_TO_GROUP", "video": videoname, "quality": quality, "groupId": groupId}
             bytesToSend = json.dumps(req).encode()
             udp.sendall(bytesToSend)
             audio_thread = threading.Thread(target=self.audio_stream, args=(videoname,))
@@ -465,14 +501,14 @@ class App(Tk):
 
     def go_to_video(self, videoname, quality, group, groupId):
         self.curr_frame.place_forget()
-        self.curr_frame = VideoFrame(self, videoname, quality, group, self.list_videos, groupId)
+        self.curr_frame = VideoFrame(self, videoname, quality, self.list_videos, group, groupId)
         self.curr_frame.place(in_=self, anchor="c", relx=.5, rely=.5)
         return
 
 
     def manage_group(self, group, groupId):
         self.curr_frame.place_forget()
-        self.curr_frame = GroupManager(self, self.navigate_to_main, self.navigate_to_main, self.sair_da_app, group, groupId)
+        self.curr_frame = GroupManager(self, self.list_videos, self.navigate_to_main, self.sair_da_app, group, groupId)
         self.curr_frame.place(in_=self, anchor="c", relx=.5, rely=.5)
         return
 
