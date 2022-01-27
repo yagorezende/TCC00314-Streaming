@@ -14,6 +14,10 @@ class Service:
     PREMIUM = 1
     GUEST = 2
 
+    def to_string(value):
+        if isinstance(value, int):
+            return {Service.PREMIUM: "premium", Service.GUEST: "guest"}[value]
+        return value
 
 if __name__ == "__main__":
     print("db path ->", DATABASE['path'])

@@ -34,7 +34,7 @@ def open_server():
     audio_server.listen(10)
     threading.Thread(target=audio_stream, args=(audio_server,)).start()
 
-    grupos = {}
+    grupos = [{'nome': 'Família', 'usuarios': []}, {'nome': 'Amigos', 'usuarios': []}]
 
     print('Escutando em: ', socket_address)
     running = True
@@ -44,13 +44,33 @@ def open_server():
         request = json.loads(msg)
         print(request)
         request_type  = request.get("request")
+
         if request_type == "LISTAR_VIDEOS":
             list_videos(server_socket, client_addr)
-        elif request_type == "STREAMAR_MEMBRO_GRUPO":
-            # TODO: checar com o servidor de controle se o usuário está no grupo
-            grupo_id = request.get("video")
-            grupos[grupo_id].append(client_addr)
-        elif request_type == "REPRODUZIR_VIDEO":
+
+        elif request.get("request") == "GET_GRUPO_ATUAL":
+            for group in grupos:
+                if client_addr in group['usuarios']:
+                    send_message = {"request": "GET_GRUPO_ATUAL", "has_group": True, "grupo": group['nome']}
+                    server_socket.sendto(json.dumps(send_message).encode(), client_addr)
+                else:
+                    send_message = {"request": "GET_GRUPO_ATUAL", "has_group": False}
+                    server_socket.sendto(json.dumps(send_message).encode(), client_addr)
+
+        elif request.get("request") == "LISTAR_GRUPOS":
+            grupos[0]['usuarios'].append(client_addr) #temp
+            grupos_pertence = [d for d in grupos if client_addr in d['usuarios']]
+            send_message = {"request": "LISTAR_GRUPOS", "grupos": grupos_pertence}
+            server_socket.sendto(json.dumps(send_message).encode(), client_addr)
+
+        elif request.get("request") == "CRIAR_GRUPO":
+            name = request.get("nome")
+            grupos.append({'nome': name, 'usuarios': [client_addr, ]})
+            send_message = {"request": "CRIAR_GRUPO", "success": True}
+            server_socket.sendto(json.dumps(send_message).encode(), client_addr)
+            print(grupos)
+
+        elif request.get("request") == "REPRODUZIR_VIDEO":
             try:
 
                 # TODO: mudar para grupos

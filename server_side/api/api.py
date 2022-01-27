@@ -38,28 +38,57 @@ class API(Node):
                 return self._login_or_create_user(request)
             elif _type == "SAIR_DA_APP":
                 return self._logout_or_remove(request)
+            elif _type == "CRIAR_GRUPO":
+                return self._create_group(request)
+            elif _type == "ADD_USUARIO_GRUPO":
+                return self._add_user_to_group(request)
+            elif _type == "VER_GRUPO":
+                return self._get_group(request)
+            elif _type == "REMOVER_USUARIO_GRUPO":
+                return self._remove_user_from_group(request)
         except Exception as e:
-            print(e)
+            raise e
 
     def _get_user_information(self, request: dict) -> dict:
         _type = "USER_INFORMATION"
-        return {"answer": _type}
+        user = self.get_parent().AM.get_user(request.get("id"))
+        return {"answer": _type, "content": user.to_dict()}
 
     def _login_or_create_user(self, request: dict) -> dict:
         _type = ["ENTRAR_NA_APP_ACK", "STATUS_DO_USUARIO"]
-        return {"answer": _type}
+        user = self.get_parent().AM.get_user_by_name(request.get("name"))
+        if user is None:
+            user = self.get_parent().AM.add_user(request.get("name"))
+            if request.get("service") == "premium":
+                self.get_parent().AM.upgrade_user(user.id)
+            return {"answer": _type[0], "content": user.to_dict()}
+        return {"answer": _type[1], "content": user.to_dict()}
 
     def _logout_or_remove(self, request: dict) -> dict:
         _type = "SAIR_DA_APP_ACK"
+        self.get_parent().AM.remove_user(request.get("id"))
         return {"answer": _type}
 
-    def close(self):
-        if self._server_thread:
-            self.request = b'kill'
-            self.server.shutdown(socket.SHUT_RDWR)
-            self.server.close()
-            self._server_thread.join()
-        print("Server closed")
+    def _create_group(self, request: dict) -> dict:
+        _type = "CRIAR_GRUPO_ACK"
+        gid = self.get_parent().AM.add_group(request.get("name"))
+        self.get_parent().AM.add_user_to_group(gid, request.get("id"))
+        return {"answer": _type, "content": {"gid": gid}}
+
+    def _add_user_to_group(self, request: dict) -> dict:
+        _type = "ADD_USUARIO_GRUPO_ACK"
+        self.get_parent().AM.add_user_to_group(request.get("gid"), request.get("id"))
+        return {"answer": _type}
+
+    def _get_group(self, request: dict) -> dict:
+        _type = "VER_GRUPO"
+        group = self.get_parent().AM.get_user_from_group(request.get("gid"))
+        return {"answer": _type, "content": group.to_dict()}
+
+    def _remove_user_from_group(self, request: dict) -> dict:
+        _type = "REMOVER_USUARIO_GRUPO_ACK"
+        self.get_parent().AM.remove_group_member(request.get("gid"), request.get("id"))
+        return {"answer": _type}
 
     def _process_connection(self, conn, addr):
         with conn:
@@ -73,8 +102,17 @@ class API(Node):
                 data = json.loads(self.request)
                 print("data: ", data)
                 response = self.endpoints(data)
+                print("response: ", response)
                 conn.sendall(json.dumps(response).encode())
                 i += 1
+
+    def close(self):
+        if self._server_thread:
+            self.request = b'kill'
+            self.server.shutdown(socket.SHUT_RDWR)
+            self.server.close()
+            self._server_thread.join()
+        print("Server closed")
 
 
 if __name__ == "__main__":
