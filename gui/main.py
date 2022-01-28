@@ -13,7 +13,7 @@ import base64
 import numpy as np
 import time
 import zlib
-
+import queue as pyqueue
 import pyaudio
 
 BUFF_SIZE = 65536
@@ -22,11 +22,9 @@ HOST = '127.0.0.1'
 PORT = 5050
 TCP_PORT = 6060
 udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-audio_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 dest = (HOST, PORT)
 udp.connect(dest)
-audio_udp.connect((HOST, PORT - 1))
 tcp_sock.connect((HOST, TCP_PORT))
 
 
@@ -202,71 +200,159 @@ class GroupsFrame(Frame):
         quitter()
 
 
+class FrameReceiver:
+    @staticmethod
+    def run(videoname, groupId):
+        global close_stream
+        # start audio streaming
+        audio_thread = threading.Thread(target=FrameReceiver.audio_stream, args=(videoname, groupId))
+
+        close_stream = False
+        fps, st, frames_to_count, cnt = (0, 0, 20, 0)
+        first = True
+        while True:
+            try:
+                try:
+                    packet, _ = udp.recvfrom(BUFF_SIZE)
+                    info = json.loads(packet.decode("utf8"))
+                    content = bytes()
+                    while len(content) < info.get("len"):
+                        packet, _ = udp.recvfrom(BUFF_SIZE)
+                        content += packet
+
+                except Exception as e:
+                    print("jumping due:", e)
+                    continue
+
+                uncompressed = zlib.decompress(content)
+                data = pickle.loads(uncompressed)  # base64.b64decode(uncompressed,' /')
+                npdata = np.fromstring(data, dtype=np.uint8)
+                frame = cv2.imdecode(npdata, 1)
+                cv2.imshow(videoname, frame)
+                if first:
+                    audio_thread.start()
+                    first = False
+
+                key = cv2.waitKey(1) & 0xFF
+
+                if key == ord('q') or cv2.getWindowProperty(videoname, cv2.WND_PROP_VISIBLE) < 1:
+                    # udp.close()
+                    close_stream = True
+
+                    cv2.destroyAllWindows()
+                    break
+                if cnt == frames_to_count:
+                    try:
+                        fps = round(frames_to_count / (time.time() - st))
+                        st = time.time()
+                        cnt = 0
+                    except:
+                        pass
+                cnt += 1
+            except Exception as e:
+                print(e)
+
+    @staticmethod
+    def audio_stream(videoname, groupId):
+        global current_user
+        print("Audio streaming rodando")
+
+        audio_req = {"request": "GET_AUDIO", "video": videoname, "gid": groupId}
+        bytesToSend = json.dumps(audio_req).encode()
+        # create socket
+        audio_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
+        audio_socket.sendto(bytesToSend, dest)
+
+        threading.Thread(target=FrameReceiver.play_audio).start()
+
+        data = b""
+        payload_size = struct.calcsize("Q")
+        # packet, client_addr = audio_socket.recvfrom(CHUNK*4)
+        # print("audio packet", packet)
+        global audio_queue
+        audio_queue = pyqueue.Queue(maxsize=10000)
+        CHUNK = 1024
+        while True:
+            try:
+                packet, client_addr = audio_socket.recvfrom(BUFF_SIZE)  # 4K
+                # while len(data) < payload_size:
+                #     packet, client_addr = audio_socket.recvfrom(CHUNK*4)  # 4K
+                #     if not packet: break
+                #     data += packet
+                # packed_msg_size = data[:payload_size]
+                # data = data[payload_size:]
+                # msg_size = struct.unpack("Q", packed_msg_size)[0]
+                # while len(data) < msg_size:
+                #     packet, client_addr = audio_socket.recvfrom(CHUNK * 4)
+                #     data += packet
+                # frame_data = data[:msg_size]
+                # data = data[msg_size:]
+                frame = pickle.loads(packet)
+                audio_queue.put(frame)
+                # stream.write(frame)
+            except:
+                raise
+                break
+        audio_socket.close()
+        os._exit(1)
+
+    @staticmethod
+    def play_audio():
+        p = pyaudio.PyAudio()
+        CHUNK = 1024
+        stream = p.open(format=p.get_format_from_width(2),
+                        channels=2,
+                        rate=44100,
+                        output=True,
+                        frames_per_buffer=CHUNK)
+        global audio_queue
+        while not close_stream:
+            frame = audio_queue.get()
+            stream.write(frame)
+        stream.close()
+
+
 class ListVideosFrame(Frame):
     def __init__(self, link, back, navigator, group, groupId, quit_app, manage_group):
         super().__init__(link)
+        self.assemble(back, navigator, group, groupId, manage_group)
+
+    def assemble(self, back, navigator, group, groupId, manage_group, refresh=False):
         global current_user
         # call streaming to ask if streaming video is on
         # if so: adds addr to thred
-        if current_user.get()["service"] == "guest":
+        print("ListVideosFrame user:", current_user.get())
+        if current_user.service == "guest":
             req = {"request": "REPRODUZIR_VIDEO", 'gid': groupId}
             bytesToSend = json.dumps(req).encode()
             udp.sendall(bytesToSend)
             res = udp.recv(BUFF_SIZE)
             resAsJson = json.loads(res)
+            print("ListVideosFrame streaming_is_on:", resAsJson)
             if resAsJson["streaming_is_on"]:
-                fps, st, frames_to_count, cnt = (0, 0, 20, 0)
-                while True:
-                    try:
-                        try:
-                            packet, _ = udp.recvfrom(BUFF_SIZE)
-                            info = json.loads(packet.decode("utf8"))
-                            content = bytes()
-                            while len(content) < info.get("len"):
-                                packet, _ = udp.recvfrom(BUFF_SIZE)
-                                content += packet
+                FrameReceiver.run(f"Stream do grupo {group}", groupId)
+                req = {"request": "PARAR_STREAMING"}
+                bytesToSend = json.dumps(req).encode()
+                udp.sendall(bytesToSend)
+                # Label(self, text="Fim da exibição de video!").pack()
+                # Button(self, text="Voltar", command=lambda group=group: navigator(group, groupId)).pack(pady=20)
 
-                        except Exception as e:
-                            print("jumping due:", e)
-                            continue
-
-                        uncompressed = zlib.decompress(content)
-                        data = pickle.loads(uncompressed)  # base64.b64decode(uncompressed,' /')
-                        npdata = np.fromstring(data, dtype=np.uint8)
-                        frame = cv2.imdecode(npdata, 1)
-                        cv2.imshow("RECEIVING VIDEO", frame)
-
-                        key = cv2.waitKey(1) & 0xFF
-
-                        if key == ord('q') or cv2.getWindowProperty('RECEIVING VIDEO', cv2.WND_PROP_VISIBLE) < 1:
-                            # udp.close()
-                            close_stream = True
-
-                            cv2.destroyAllWindows()
-                            break
-                        if cnt == frames_to_count:
-                            try:
-                                fps = round(frames_to_count / (time.time() - st))
-                                st = time.time()
-                                cnt = 0
-                            except:
-                                pass
-                        cnt += 1
-                    except Exception as e:
-                        print(e)
-                        # cv2.destroyAllWindows()
-                        # break
-                return
+        if refresh:
+            for widget in self.winfo_children():
+                widget.destroy()
         # if not: list videos
         # start socket comm
         req = {"request": "LISTAR_VIDEOS", 'id': current_user.get()["id"]}
         bytesToSend = json.dumps(req).encode()
         udp.sendall(bytesToSend)
-        res = udp.recv(BUFF_SIZE)
-        resAsJson = json.loads(res)
+        # res = udp.recv(BUFF_SIZE)
+        resAsJson = {}
         while not 'lista' in resAsJson.keys():
             res = udp.recv(BUFF_SIZE)
-            resAsJson = json.loads(res)
+            try:
+                resAsJson = json.loads(res)
+            except:
+                pass
         self.videos = resAsJson['lista']
         self.videos.sort()
         # end socket comm
@@ -280,6 +366,10 @@ class ListVideosFrame(Frame):
         if current_user.service == "premium":
             Button(title, text="Gerenciar grupo", command=lambda: manage_group(group, groupId)).grid(column=2, row=0,
                                                                                                      pady=5, padx=5)
+        else:
+            Button(title, text="Refresh", command=lambda: self.assemble(
+                back, navigator, group, groupId, manage_group, refresh=True
+            )).grid(column=2, row=0, pady=5, padx=5)
         Label(self, text="Lista de vídeos disponiveis", font=("Arial", 25)).pack()
         for video in self.videos:
             curr_frame = Frame(self, pady=20, highlightbackground="#ffffff", highlightthickness=1, bd=0, relief=SUNKEN)
@@ -408,105 +498,19 @@ class VideoFrame(Frame):
             req = {"request": "PLAY_VIDEO_TO_GROUP", "video": videoname, "quality": quality, "gid": groupId}
             bytesToSend = json.dumps(req).encode()
             udp.sendall(bytesToSend)
-            audio_thread = threading.Thread(target=self.audio_stream, args=(videoname,))
-            audio_thread.start()
-            global close_stream
-            close_stream = False
-            fps, st, frames_to_count, cnt = (0, 0, 20, 0)
 
-            while True:
-                try:
-                    try:
-                        packet, _ = udp.recvfrom(BUFF_SIZE)
-                        info = json.loads(packet.decode("utf8"))
-                        content = bytes()
-                        while len(content) < info.get("len"):
-                            packet, _ = udp.recvfrom(BUFF_SIZE)
-                            content += packet
+            FrameReceiver.run(videoname, groupId)
 
-                    except Exception as e:
-                        print("jumping due:", e)
-                        continue
-
-                    uncompressed = zlib.decompress(content)
-                    data = pickle.loads(uncompressed)  # base64.b64decode(uncompressed,' /')
-                    npdata = np.fromstring(data, dtype=np.uint8)
-                    frame = cv2.imdecode(npdata, 1)
-                    cv2.imshow("RECEIVING VIDEO", frame)
-
-                    key = cv2.waitKey(1) & 0xFF
-
-                    if key == ord('q') or cv2.getWindowProperty('RECEIVING VIDEO', cv2.WND_PROP_VISIBLE) < 1:
-                        # udp.close()
-                        close_stream = True
-
-                        cv2.destroyAllWindows()
-                        break
-                    if cnt == frames_to_count:
-                        try:
-                            fps = round(frames_to_count / (time.time() - st))
-                            st = time.time()
-                            cnt = 0
-                        except:
-                            pass
-                    cnt += 1
-                except Exception as e:
-                    print(e)
-                    # cv2.destroyAllWindows()
-                    # break
             req = {"request": "PARAR_STREAMING"}
             bytesToSend = json.dumps(req).encode()
             udp.sendall(bytesToSend)
             Label(self, text="Fim da exibição de: " + videoname + " em " + quality).pack()
-            Button(self, text="Voltar", command=lambda group=group: navigator(group, groupId)).pack(pady=20)
+            Button(self, text="Voltar", command=lambda group=group, groupId=groupId: navigator(group, groupId)).pack(
+                pady=20)
         else:
             Label(self, text="Você não tem permissão para reproduzir vídeos. Por favor, mude sua classificação.").pack()
-            Button(self, text="Voltar", command=lambda group=group: navigator(group, groupId)).pack(pady=20)
-
-    def audio_stream(self, videoname):
-        audio_req = {"request": "GET_AUDIO", "video": videoname}
-        bytesToSend = json.dumps(audio_req).encode()
-
-        p = pyaudio.PyAudio()
-        CHUNK = 1024
-        stream = p.open(format=p.get_format_from_width(2),
-                        channels=2,
-                        rate=44100,
-                        output=True,
-                        frames_per_buffer=CHUNK)
-        # create socket
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        socket_address = (HOST, PORT - 1)
-        print('server listening at', socket_address)
-        client_socket.connect(socket_address)
-        print("CLIENT CONNECTED TO", socket_address)
-        client_socket.sendall(bytesToSend)
-
-        data = b""
-        payload_size = struct.calcsize("Q")
-        while True:
-            try:
-                if close_stream == True:
-                    stream.close()
-                    break
-                while len(data) < payload_size:
-                    packet = client_socket.recv(4 * 1024)  # 4K
-                    if not packet: break
-                    data += packet
-                packet_msg_size = data[:payload_size]
-                data = data[payload_size:]
-                msg_size = struct.unpack("Q", packet_msg_size)[0]
-                while len(data) < msg_size:
-                    data += client_socket.recv(4 * 1024)
-                frame_data = data[:msg_size]
-                data = data[msg_size:]
-                frame = pickle.loads(frame_data)
-                stream.write(frame)
-            except:
-                stream.close()
-                break
-        client_socket.close()
-        # os._exit(1)
+            Button(self, text="Voltar", command=lambda group=group, groupId=groupId: navigator(group, groupId)).pack(
+                pady=20)
 
     def message_server(self, data):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

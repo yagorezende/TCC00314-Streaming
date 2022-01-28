@@ -21,10 +21,12 @@ port = 5050
 WIDTH = 400
 QUALITY = {"720p": 1280, "480p": 854, "240p": 426}
 streaming = []
+global streaming_thread
 streaming_thread = {}
 
 
 def open_server():
+    global streaming_thread
     # get all groups
     grupos_info_req = {"request": "GET_GRUPOS"}
     grupos_info = message_server(grupos_info_req)
@@ -37,10 +39,10 @@ def open_server():
     server_socket.bind(socket_address)
 
     # Audio server
-    audio_server = socket.socket()
-    audio_server.bind((host_ip, (port - 1)))
-    audio_server.listen(10)
-    threading.Thread(target=audio_stream, args=(audio_server,)).start()
+    # audio_server = socket.socket()
+    # audio_server.bind((host_ip, (port - 1)))
+    # audio_server.listen(10)
+    # threading.Thread(target=audio_stream, args=(audio_server,)).start()
 
     print('Escutando em: ', socket_address)
     running = True
@@ -87,20 +89,13 @@ def open_server():
             if groupId in streaming_thread.keys():
                 send_message = {"request": "REPRODUZIR_VIDEO", "streaming_is_on": True}
                 server_socket.sendto(json.dumps(send_message).encode(), client_addr)
+                streaming.append(client_addr)
                 streaming_thread[groupId].append(client_addr)
             else:
                 send_message = {"request": "REPRODUZIR_VIDEO", "streaming_is_on": False}
                 server_socket.sendto(json.dumps(send_message).encode(), client_addr)
-
-
         elif request.get("request") == "PLAY_VIDEO_TO_GROUP":
-            groupId = request.get("groupId")
-            # current_group_req = {"request": "VER_GRUPO", "gid": groupId}
-            # current_group = message_server(current_group_req)
-            # print("\n*\n")
-            # print("grupo: \n")
-            # print(current_group)
-            # print("\n*\n")
+            groupId = request.get("gid")
             streaming_thread[groupId] = [client_addr, ]
             try:
                 video_name = request.get("video") + "_" + request.get("quality") + ".mp4"
@@ -137,11 +132,18 @@ def open_server():
                 print("error adding video")
 
         elif request.get("request") == "PARAR_STREAMING":
-            streaming.remove(client_addr)
-
+            try:
+                streaming.remove(client_addr)
+            except:
+                pass
+        elif request.get("request") == "GET_AUDIO":
+            video_name = request.get("video")
+            groupId = request.get("gid")
+            t = threading.Thread(target=audio_stream_sender, args=(server_socket, client_addr, video_name, groupId))
+            t.start()
         else:
             break
-    audio_server.close()
+    # audio_server.close()
 
 
 def message_server(data):
@@ -191,20 +193,27 @@ def audio_stream(server_socket: socket.socket):
             break
 
 
-def audio_stream_sender(client_socket, addr, audio_name):
-    CHUNK = 1024 * 4
+def audio_stream_sender(server_socket, addr, audio_name, gid):
+    CHUNK = 1024
     wf = wave.open("videos/" + audio_name + ".wav", 'rb')
-    print('server listening at', (host_ip, (port - 1)))
-    while True:
-        if client_socket:
-            while addr in streaming:
-                try:
-                    data = wf.readframes(CHUNK)
-                    a = pickle.dumps(data)
-                    message = struct.pack("Q", len(a)) + a
-                    client_socket.sendall(message)
-                except:
-                    return
+    # p = pyaudio.PyAudio()
+    # stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+    #                 channels=wf.getnchannels(),
+    #                 rate=wf.getframerate(),
+    #                 input=True,
+    #                 frames_per_buffer=CHUNK)
+    print('server sending audio to', addr, gid in streaming_thread.keys())
+    while gid in streaming_thread.keys():
+        try:
+            data = wf.readframes(CHUNK)
+            a = pickle.dumps(data)
+            # message = struct.pack("Q", len(a)) + a
+            # message = base64.b64encode(data)
+            server_socket.sendto(a, addr)
+        except:
+            print("Done audio")
+            return
+    print("Audio interrupt")
 
 
 def start_stream(server_socket, client_addr, groupId, filename="video1.mp4", width=400):
@@ -228,8 +237,9 @@ def start_stream(server_socket, client_addr, groupId, filename="video1.mp4", wid
             compressed = zlib.compress(message, 9)
             # print("Message Size:", len(compressed))
             data = {"frame": cnt, "len": len(compressed)}
-            for addr in streaming_thread[groupId]:
-                server_socket.sendto(json.dumps(data).encode(), addr)
+            for addr in streaming_thread.get(groupId, []):
+                if addr in streaming:
+                    server_socket.sendto(json.dumps(data).encode(), addr)
             starting_point = 0
             file_size = 0
             while starting_point < len(compressed) and client_addr in streaming:
@@ -237,8 +247,9 @@ def start_stream(server_socket, client_addr, groupId, filename="video1.mp4", wid
                 data = compressed[starting_point: int(starting_point + FRAME_SIZE)]
                 file_size += len(data)
                 # print("Sending Message:", len(data), "sent ->", file_size)
-                for addr in streaming_thread[groupId]:
-                    server_socket.sendto(data, addr)
+                for addr in streaming_thread.get(groupId, []):
+                    if addr in streaming:
+                        server_socket.sendto(data, addr)
                 starting_point += FRAME_SIZE
 
             if cnt == frames_to_count:
@@ -263,11 +274,15 @@ def start_stream(server_socket, client_addr, groupId, filename="video1.mp4", wid
                 os._exit(1)
                 break
         except:
-
             print('error')
             break
-
-    print("thread finalizada")
+    print("thread finalizada -> removendo ", client_addr)
+    for element in streaming_thread.get(groupId, []):
+        try:
+            streaming.remove(element)
+        except:
+            pass
+    del streaming_thread[groupId]
 
 
 if __name__ == "__main__":
